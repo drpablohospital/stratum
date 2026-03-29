@@ -1,0 +1,2 @@
+FINALIZADO | 449/500 evaluados | Mejor score: 3.5258
+Mode: legacy_classic | PnL: 0.05 | PF: 1.91 | DD: 0.00
