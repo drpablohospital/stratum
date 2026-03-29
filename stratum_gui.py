@@ -708,72 +708,58 @@ async def prompt_save_strategy() -> None:
         append_log(f"[error] no se pudo guardar {path.name}: {e}")
 
 
-# ======================== Kucoin API (reemplaza a Binance y Bybit) ========================
-import os
-import requests
-from requests.auth import HTTPProxyAuth
-
-def fetch_kucoin_klines(symbol: str = "BTC-USDT", interval: str = "15m", limit: int = 180) -> pd.DataFrame:
+# ======================== BYBIT API ========================
+def fetch_bybit_klines(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 180) -> pd.DataFrame:
     """
-    Obtiene velas de KuCoin usando proxy si está configurado en variables de entorno.
+    Obtiene velas de Bybit (API pública, sin autenticación).
+    Intervalos soportados: 1m,3m,5m,15m,30m,1h,2h,4h,6h,12h,1d,1w,1M.
     """
-    # Mapeo de intervalos
+    # Mapeo de intervalos de NiceGUI a formato Bybit
     interval_map = {
-        "1m": "1min",
-        "3m": "3min",
-        "5m": "5min",
-        "15m": "15min",
-        "30m": "30min",
-        "1h": "1hour",
-        "2h": "2hour",
-        "4h": "4hour",
-        "6h": "6hour",
-        "12h": "12hour",
-        "1d": "1day",
-        "1w": "1week",
+        "1m": "1",
+        "3m": "3",
+        "5m": "5",
+        "15m": "15",
+        "30m": "30",
+        "1h": "60",
+        "2h": "120",
+        "4h": "240",
+        "6h": "360",
+        "12h": "720",
+        "1d": "D",
+        "1w": "W",
+        "1M": "M",
     }
-    kucoin_interval = interval_map.get(interval, "15min")
-    if symbol == "BTCUSDT":
-        symbol = "BTC-USDT"
-    url = f"https://api.kucoin.com/api/v1/market/candles?type={kucoin_interval}&symbol={symbol}&limit={limit}"
-
-    # Leer configuración del proxy desde variables de entorno
-    proxy_url = os.environ.get("PROXY_URL")
-    proxy_user = os.environ.get("PROXY_USER")
-    proxy_pass = os.environ.get("PROXY_PASS")
-
-    proxies = None
-    auth = None
-    if proxy_url and proxy_user and proxy_pass:
-        proxies = {"http": proxy_url, "https": proxy_url}
-        auth = HTTPProxyAuth(proxy_user, proxy_pass)
-        print(f"[proxy] Usando proxy: {proxy_url}")  # Opcional, para logs
-    else:
-        print("[proxy] No se encontraron variables de proxy, conectando directamente")
-
-    if proxies:
-        response = requests.get(url, proxies=proxies, auth=auth, timeout=12)
-    else:
-        response = requests.get(url, timeout=12)
-
-    response.raise_for_status()
-    data = response.json()
-
-    if data.get("code") != "200000":
-        raise Exception(f"KuCoin API error: {data.get('msg')}")
-
-    klines = data["data"]
-    df = pd.DataFrame(klines, columns=["time", "open", "close", "high", "low", "volume", "turnover"])
+    bybit_interval = interval_map.get(interval, "15")
+    url = f"https://api.bybit.com/v5/market/kline?category=spot&symbol={symbol}&interval={bybit_interval}&limit={limit}"
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0 STRATUM/1.0"})
+    with urlopen(req, timeout=12) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    if data.get("retCode") != 0:
+        raise Exception(f"Bybit API error: {data.get('retMsg')}")
+    result = data["result"]
+    # result["list"] es una lista de listas: [timestamp, open, high, low, close, volume, turnover]
+    klines = result["list"]
+    # Ordenar por timestamp ascendente (Bybit devuelve descendente por defecto)
+    klines.reverse()
+    df = pd.DataFrame(klines, columns=["timestamp", "open", "high", "low", "close", "volume", "turnover"])
     for col in ["open", "high", "low", "close", "volume"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-    df["open_time"] = pd.to_datetime(df["time"].astype(int), unit="ms")
+    df["open_time"] = pd.to_datetime(df["timestamp"].astype(int), unit="ms")
     df = df.sort_values("open_time")
     return df[["open_time", "open", "high", "low", "close", "volume"]]
 
 
-def fetch_kucoin_klines_idle(symbol: str = "BTC-USDT", interval: str = "15m", limit: int = 140) -> pd.DataFrame:
-    """Versión idle, igual pero con proxy."""
-    return fetch_kucoin_klines(symbol, interval, limit)
+def fetch_bybit_klines_idle(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 140) -> pd.DataFrame:
+    """Versión idle de la función anterior."""
+    return fetch_bybit_klines(symbol, interval, limit)
+
+
+# ======================== FUNCIONES ORIGINALES DE BINANCE (comentadas, se mantienen por si se necesitan) ========================
+# def fetch_binance_klines(...)
+# def fetch_binance_klines_idle(...)
+# ====================================================================
+
 
 def infer_trade_columns(df: pd.DataFrame) -> tuple[str | None, str | None, str | None]:
     time_candidates = ["entry_time", "time", "timestamp", "ts", "datetime"]
@@ -787,8 +773,8 @@ def infer_trade_columns(df: pd.DataFrame) -> tuple[str | None, str | None, str |
 
 def build_live_candles_figure() -> go.Figure:
     live_tf = config.get("live_chart_tf", config.get("tf_signal", "15m"))
-    df = fetch_kucoin_klines(
-        symbol=config.get("market_symbol", "BTC-USDT"),
+    df = fetch_bybit_klines(
+        symbol=config.get("market_symbol", "BTCUSDT"),
         interval=live_tf,
         limit=180,
     )
@@ -2005,9 +1991,9 @@ def idle_page() -> None:
         </div>
         '''
 
-    # Usar la misma función de KuCoin para la página idle
-    def fetch_kucoin_klines_idle(symbol: str = 'BTC-USDT', interval: str = '15m', limit: int = 140) -> pd.DataFrame:
-        return fetch_kucoin_klines(symbol, interval, limit)
+    # Usar la misma función de Bybit para la página idle
+    def fetch_bybit_klines_idle(symbol: str = 'BTCUSDT', interval: str = '15m', limit: int = 140) -> pd.DataFrame:
+        return fetch_bybit_klines(symbol, interval, limit)
 
     def update_market_stats(df: pd.DataFrame) -> None:
         if df.empty:
@@ -2026,7 +2012,7 @@ def idle_page() -> None:
         idle_state['btc_trend'] = trend
 
     def build_candles_idle() -> go.Figure:
-        df = fetch_kucoin_klines_idle(interval='15m', limit=140)
+        df = fetch_bybit_klines_idle(interval='15m', limit=140)
         update_market_stats(df)
         fig = go.Figure()
         fig.add_trace(go.Candlestick(
@@ -2225,7 +2211,7 @@ def build_dashboard() -> None:
                         ui.button("Guardar estrategia", on_click=prompt_save_strategy).classes("btn-soft")
                         ui.button("Iniciar bot de trading", on_click=prompt_launch_bot).classes("btn-warm")
                         ui.button("Vista IDLE", on_click=lambda: ui.navigate.to("/idle")).classes("btn-soft")
-                        # Botón redundante eliminado para evitar confusión
+                        ui.button("Abrir STRATUM IDLE", on_click=lambda: ui.navigate.to("/idle")).classes("btn-soft")  # redundante pero claro
 
                 with ui.tabs().classes("glass-tabs w-full") as tabs:
                     tab_params = ui.tab("Parámetros")
@@ -2901,7 +2887,7 @@ def render_dogma_landing() -> None:
 
 
 # ======================== LOGIN Y ARRANQUE ========================
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "cambia_esto_en_produccion")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "1234")
 
 @ui.page("/")
 def landing_page() -> None:

@@ -1,9 +1,9 @@
 {
-  "cooldown_until": 0,
-  "last_heartbeat_ts": 1774782915,
-  "last_signal": null,
-  "last_entry_side": null,
-  "last_entry_price": null,
+  "cooldown_until": 1774796457,
+  "last_heartbeat_ts": 1774789019,
+  "last_signal": "2026-03-29 11:30:57 UTC",
+  "last_entry_side": "buy",
+  "last_entry_price": 66819.0,
   "boot_time": "2026-03-29 10:57:11 UTC",
   "strategy_snapshot": {
     "symbol": "BTC/USDT:USDT",
