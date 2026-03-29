@@ -2017,7 +2017,45 @@ def build_dashboard() -> None:
     refresh_live_macro_news(background=True)
     refresh_live_chart(force=True)
     write_ambient_state()
+    # Lanzar scripts en segundo plano (solo una vez)
+    launch_background_scripts()
 
+import subprocess
+import sys
+
+def launch_background_scripts():
+    """Lanza otros scripts de STRATUM como procesos independientes."""
+    scripts = [
+        {"name": "stratum_idle", "port": 8082, "file": "stratum_idle.py"},
+        {"name": "apolo", "port": 8084, "file": "apolo.py"},  # si apolo tiene interfaz web
+        # Agrega aquí otros scripts que quieras ejecutar, por ejemplo:
+        # {"name": "oracle", "port": 8085, "file": "oracle.py"},
+    ]
+    for script in scripts:
+        try:
+            # Determinar si el script usa un puerto (por ejemplo, stratum_idle tiene ui.run(port=8082))
+            # Pasamos el puerto como argumento si el script lo acepta, o lo forzamos por entorno.
+            env = os.environ.copy()
+            env["PORT"] = str(script["port"])
+            proc = subprocess.Popen(
+                [sys.executable, script["file"]],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                cwd=BASE_DIR,
+                text=True,
+                bufsize=1
+            )
+            # Opcional: leer stdout/stderr y registrarlos en la terminal
+            def log_output(pipe, prefix):
+                for line in iter(pipe.readline, ''):
+                    if line.strip():
+                        queue_log(f"[{script['name']}] {line.strip()}")
+            threading.Thread(target=log_output, args=(proc.stdout, script["name"]), daemon=True).start()
+            threading.Thread(target=log_output, args=(proc.stderr, script["name"]), daemon=True).start()
+            append_log(f"[system] Lanzado {script['name']} en puerto {script['port']}")
+        except Exception as e:
+            append_log(f"[error] No se pudo lanzar {script['name']}: {e}")
 
 # --- Login ---
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "cambia_esto_en_produccion")
