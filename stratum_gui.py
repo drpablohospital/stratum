@@ -708,35 +708,57 @@ async def prompt_save_strategy() -> None:
         append_log(f"[error] no se pudo guardar {path.name}: {e}")
 
 
-from urllib.parse import quote_plus  # Asegúrate de tener esta importación al inicio del archivo
-
-def fetch_binance_klines(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 180) -> pd.DataFrame:
-    # 1. Parámetros de la consulta original
-    params = urlencode({"symbol": symbol, "interval": interval, "limit": limit})
-    target_url = f"https://api.binance.com/api/v3/klines?{params}"
-
-    # 2. URL de tu proxy (cambia si es necesario)
-    PROXY_URL = "https://reliable-proxy-d9ew.onrender.com"
-
-    # 3. Construir la URL del proxy con el target codificado
-    proxy_request_url = f"{PROXY_URL}/?target={quote_plus(target_url)}"
-
-    # 4. Realizar la petición a través del proxy
-    req = Request(proxy_request_url, headers={"User-Agent": "Mozilla/5.0 STRATUM/1.0"})
+# ======================== BYBIT API ========================
+def fetch_bybit_klines(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 180) -> pd.DataFrame:
+    """
+    Obtiene velas de Bybit (API pública, sin autenticación).
+    Intervalos soportados: 1m,3m,5m,15m,30m,1h,2h,4h,6h,12h,1d,1w,1M.
+    """
+    # Mapeo de intervalos de NiceGUI a formato Bybit
+    interval_map = {
+        "1m": "1",
+        "3m": "3",
+        "5m": "5",
+        "15m": "15",
+        "30m": "30",
+        "1h": "60",
+        "2h": "120",
+        "4h": "240",
+        "6h": "360",
+        "12h": "720",
+        "1d": "D",
+        "1w": "W",
+        "1M": "M",
+    }
+    bybit_interval = interval_map.get(interval, "15")
+    url = f"https://api.bybit.com/v5/market/kline?category=spot&symbol={symbol}&interval={bybit_interval}&limit={limit}"
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0 STRATUM/1.0"})
     with urlopen(req, timeout=12) as response:
-        raw = json.loads(response.read().decode("utf-8"))
-
-    # 5. Procesar la respuesta (igual que antes)
-    cols = [
-        "open_time", "open", "high", "low", "close", "volume",
-        "close_time", "quote_asset_volume", "trades", "taker_buy_base",
-        "taker_buy_quote", "ignore",
-    ]
-    df = pd.DataFrame(raw, columns=cols)
+        data = json.loads(response.read().decode("utf-8"))
+    if data.get("retCode") != 0:
+        raise Exception(f"Bybit API error: {data.get('retMsg')}")
+    result = data["result"]
+    # result["list"] es una lista de listas: [timestamp, open, high, low, close, volume, turnover]
+    klines = result["list"]
+    # Ordenar por timestamp ascendente (Bybit devuelve descendente por defecto)
+    klines.reverse()
+    df = pd.DataFrame(klines, columns=["timestamp", "open", "high", "low", "close", "volume", "turnover"])
     for col in ["open", "high", "low", "close", "volume"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-    df["open_time"] = pd.to_datetime(df["open_time"], unit="ms")
+    df["open_time"] = pd.to_datetime(df["timestamp"].astype(int), unit="ms")
+    df = df.sort_values("open_time")
     return df[["open_time", "open", "high", "low", "close", "volume"]]
+
+
+def fetch_bybit_klines_idle(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 140) -> pd.DataFrame:
+    """Versión idle de la función anterior."""
+    return fetch_bybit_klines(symbol, interval, limit)
+
+
+# ======================== FUNCIONES ORIGINALES DE BINANCE (comentadas, se mantienen por si se necesitan) ========================
+# def fetch_binance_klines(...)
+# def fetch_binance_klines_idle(...)
+# ====================================================================
 
 
 def infer_trade_columns(df: pd.DataFrame) -> tuple[str | None, str | None, str | None]:
@@ -751,7 +773,7 @@ def infer_trade_columns(df: pd.DataFrame) -> tuple[str | None, str | None, str |
 
 def build_live_candles_figure() -> go.Figure:
     live_tf = config.get("live_chart_tf", config.get("tf_signal", "15m"))
-    df = fetch_binance_klines(
+    df = fetch_bybit_klines(
         symbol=config.get("market_symbol", "BTCUSDT"),
         interval=live_tf,
         limit=180,
@@ -1969,27 +1991,9 @@ def idle_page() -> None:
         </div>
         '''
 
-    def fetch_binance_klines_idle(symbol: str = 'BTCUSDT', interval: str = '15m', limit: int = 140) -> pd.DataFrame:
-        params = urlencode({'symbol': symbol, 'interval': interval, 'limit': limit})
-        target_url = f'https://api.binance.com/api/v3/klines?{params}'
-
-        PROXY_URL = "https://reliable-proxy-d9ew.onrender.com"
-        proxy_request_url = f"{PROXY_URL}/?target={quote_plus(target_url)}"
-
-        req = Request(proxy_request_url, headers={'User-Agent': 'Mozilla/5.0 STRATUM/1.0'})
-        with urlopen(req, timeout=12) as response:
-            raw = json.loads(response.read().decode('utf-8'))
-
-        cols = [
-            'open_time', 'open', 'high', 'low', 'close', 'volume',
-            'close_time', 'quote_asset_volume', 'trades',
-            'taker_buy_base', 'taker_buy_quote', 'ignore'
-        ]
-        df = pd.DataFrame(raw, columns=cols)
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
-        return df[['open_time', 'open', 'high', 'low', 'close', 'volume']]
+    # Usar la misma función de Bybit para la página idle
+    def fetch_bybit_klines_idle(symbol: str = 'BTCUSDT', interval: str = '15m', limit: int = 140) -> pd.DataFrame:
+        return fetch_bybit_klines(symbol, interval, limit)
 
     def update_market_stats(df: pd.DataFrame) -> None:
         if df.empty:
@@ -2008,7 +2012,7 @@ def idle_page() -> None:
         idle_state['btc_trend'] = trend
 
     def build_candles_idle() -> go.Figure:
-        df = fetch_binance_klines_idle(interval='15m', limit=140)
+        df = fetch_bybit_klines_idle(interval='15m', limit=140)
         update_market_stats(df)
         fig = go.Figure()
         fig.add_trace(go.Candlestick(
@@ -2110,7 +2114,7 @@ def idle_page() -> None:
                             ui.label('by DOGMA · ambient decision surface').classes('brand-sub')
                         with ui.element('div').classes('top-right-wrap'):
                             strategy_label = ui.label(f'STRATEGY · {idle_state["strategy"]}').classes('strategy-pill')
-                            ui.button('Abrir STRATUM GUI', on_click=lambda: ui.navigate.to('/')).classes('ambient-nav-btn')
+                            ui.button('Abrir STRATUM GUI', on_click=lambda: ui.navigate.to('/platform')).classes('ambient-nav-btn')
                     with ui.element('div').classes('hero-block'):
                         ui.label('Latest signal').classes('eyebrow')
                         hero_label = ui.label(idle_state['headline']).classes('hero-text')
@@ -2334,6 +2338,8 @@ def build_dashboard() -> None:
     refresh_live_chart(force=True)
     write_ambient_state()
 
+
+# ======================== DOGMA LANDING PAGE ========================
 def render_dogma_landing() -> None:
     add_styles()
 
@@ -2878,6 +2884,7 @@ def render_dogma_landing() -> None:
                 with ui.row().classes('landing-actions'):
                     ui.button('Ir al login', on_click=lambda: ui.navigate.to('/login')).classes('btn-soft')
                     ui.button('Ir a la plataforma', on_click=lambda: ui.navigate.to('/login')).classes('btn-primary')
+
 
 # ======================== LOGIN Y ARRANQUE ========================
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "cambia_esto_en_produccion")

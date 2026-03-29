@@ -5,9 +5,71 @@ import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
 
-BASE = "https://fapi.binance.com"
+# ======================== BYBIT API (reemplaza a Binance) ========================
+def fetch_bybit_klines_range(symbol: str, interval: str, start_ms: int, end_ms: int, limit: int = 1000) -> pd.DataFrame:
+    """
+    Descarga velas históricas de Bybit (spot) en un rango de tiempo.
+    Intervalos soportados: 1m,3m,5m,15m,30m,1h,2h,4h,6h,12h,1d,1w,1M.
+    """
+    # Mapeo de intervalos
+    interval_map = {
+        "1m": "1", "3m": "3", "5m": "5", "15m": "15", "30m": "30",
+        "1h": "60", "2h": "120", "4h": "240", "6h": "360", "12h": "720",
+        "1d": "D", "1w": "W", "1M": "M"
+    }
+    bybit_interval = interval_map.get(interval)
+    if not bybit_interval:
+        raise ValueError(f"Intervalo {interval} no soportado por Bybit")
 
-# --- Carga de artefactos ML ---
+    all_klines = []
+    cursor = None
+
+    while True:
+        url = f"https://api.bybit.com/v5/market/kline?category=spot&symbol={symbol}&interval={bybit_interval}&limit={limit}"
+        if start_ms:
+            url += f"&start={start_ms}"
+        if end_ms:
+            url += f"&end={end_ms}"
+        if cursor:
+            url += f"&cursor={cursor}"
+
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("retCode") != 0:
+            raise Exception(f"Bybit API error: {data.get('retMsg')}")
+
+        result = data["result"]
+        klines = result.get("list", [])
+        if not klines:
+            break
+
+        # Bybit devuelve descendente (más reciente primero), lo invertimos para orden ascendente
+        all_klines.extend(reversed(klines))
+
+        cursor = result.get("nextPageCursor")
+        if not cursor:
+            break
+
+        # Pequeña pausa para evitar rate limit
+        time.sleep(0.1)
+
+    if not all_klines:
+        return pd.DataFrame()
+
+    # Convertir a DataFrame
+    df = pd.DataFrame(all_klines, columns=["timestamp", "open", "high", "low", "close", "volume", "turnover"])
+    for col in ["open", "high", "low", "close", "volume"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df["open_time"] = pd.to_datetime(df["timestamp"].astype(int), unit="ms", utc=True)
+    # Orden ascendente (por si acaso)
+    df = df.sort_values("open_time").reset_index(drop=True)
+    return df[["open_time", "open", "high", "low", "close", "volume"]]
+
+# Alias para mantener compatibilidad con el código existente
+fetch_klines = fetch_bybit_klines_range
+
+# ======================== ML artifacts (sin cambios) ========================
 ML_ARTIFACTS = {
     'model': None,
     'scaler': None,
@@ -79,35 +141,7 @@ def compute_ml_features(df):
     features.dropna(inplace=True)
     return features
 
-def fetch_klines(symbol: str, interval: str, start_ms: int, end_ms: int, limit: int = 1500) -> pd.DataFrame:
-    out = []
-    cur = start_ms
-    while True:
-        params = {"symbol": symbol, "interval": interval, "startTime": cur, "endTime": end_ms, "limit": limit}
-        r = requests.get(f"{BASE}/fapi/v1/klines", params=params, timeout=25)
-        r.raise_for_status()
-        data = r.json()
-        if not data:
-            break
-        out.extend(data)
-        last_open = data[-1][0]
-        cur = last_open + 1
-        if len(data) < limit:
-            break
-        time.sleep(0.08)
-
-    df = pd.DataFrame(out, columns=[
-        "open_time","open","high","low","close","volume",
-        "close_time","qav","ntrades","tbbav","tbqav","ignore"
-    ])
-    df = df[["open_time","open","high","low","close","volume","close_time"]].copy()
-    for c in ["open","high","low","close","volume"]:
-        df[c] = df[c].astype(float)
-    df["open_time"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
-    df["close_time"] = pd.to_datetime(df["close_time"], unit="ms", utc=True)
-    df = df.drop_duplicates(subset=["open_time"]).sort_values("open_time").reset_index(drop=True)
-    return df
-
+# ======================== Funciones de indicadores (sin cambios) ========================
 def ema(s: pd.Series, n: int) -> pd.Series:
     return s.ewm(span=n, adjust=False).mean()
 
@@ -296,10 +330,10 @@ def run_backtest(cfg, progress_callback=None, log_callback=None):
     now_ms = int(time.time() * 1000)
     start_ms = now_ms - days * 24 * 3600 * 1000
 
-    # Descargar datos 1m
+    # Descargar datos 1m (usando Bybit)
     if log_callback:
-        log_callback("Descargando datos de 1m...")
-    print("Descargando datos de 1m...")
+        log_callback("Descargando datos de 1m desde Bybit...")
+    print("Descargando datos de 1m desde Bybit...")
     try:
         df1m = fetch_klines(sym, "1m", start_ms, now_ms)
     except Exception as e:

@@ -1,5 +1,5 @@
 # ===============================
-# STRATUM TRADER BOT (vNext)
+# STRATUM TRADER BOT (vNext) - BYBIT VERSION
 # Feature-based probabilistic engine + legacy fallback
 # ===============================
 
@@ -90,23 +90,35 @@ def load_config():
     raise RuntimeError("No config found in configs/")
 
 # ===============================
-# EXCHANGE
+# EXCHANGE (BYBIT)
 # ===============================
 def get_exchange(testnet=True):
     load_dotenv()
 
-    apiKey = os.getenv("BINANCE_API_KEY")
-    secret = os.getenv("BINANCE_SECRET")
+    apiKey = os.getenv("BYBIT_API_KEY")
+    secret = os.getenv("BYBIT_SECRET")
 
-    exchange = ccxt.binance({
+    if not apiKey or not secret:
+        log("[ERROR] BYBIT_API_KEY or BYBIT_SECRET not set in environment")
+        raise RuntimeError("Missing Bybit API credentials")
+
+    # Configuración para Bybit
+    exchange = ccxt.bybit({
         "apiKey": apiKey,
         "secret": secret,
         "enableRateLimit": True,
-        "options": {"defaultType": "future"}
+        "options": {
+            "defaultType": "future",   # "spot" o "future". Por defecto usamos futuros.
+            "adjustForTimeDifference": True,
+        }
     })
 
     if testnet:
+        # Bybit testnet requiere una URL específica
         exchange.set_sandbox_mode(True)
+        # Opcional: cambiar a la URL de testnet de Bybit
+        # exchange.urls['api'] = 'https://api-testnet.bybit.com'
+        # Pero set_sandbox_mode(True) ya debería hacerlo.
 
     return exchange
 
@@ -120,7 +132,7 @@ def fetch_ohlc(ex, symbol, tf, limit=500):
     return df
 
 # ===============================
-# FEATURE ENGINE
+# FEATURE ENGINE (sin cambios)
 # ===============================
 def realized_vol(series, window=20):
     rets = np.log(series / series.shift(1))
@@ -136,29 +148,22 @@ def slope(series, window=8):
 
 def build_features(df):
     f = df.copy()
-
     f["ret1"] = f["close"].pct_change(1)
     f["ret3"] = f["close"].pct_change(3)
     f["ret12"] = f["close"].pct_change(12)
-
     f["range_pos"] = (f["close"] - f["low"]) / (f["high"] - f["low"] + 1e-9)
     f["vol_ratio"] = f["vol"] / (f["vol"].rolling(20).mean() + 1e-9)
-
     f["rv"] = realized_vol(f["close"])
     f["rv_ratio"] = f["rv"] / (f["rv"].rolling(20).mean() + 1e-9)
-
     f["ma_fast"] = f["close"].rolling(12).mean()
     f["ma_slow"] = f["close"].rolling(36).mean()
-
     f["slope"] = slope(f["ma_fast"].bfill())
-
     f["breakout_up"] = f["close"] > f["high"].rolling(20).max().shift(1)
     f["breakout_dn"] = f["close"] < f["low"].rolling(20).min().shift(1)
-
     return f
 
 # ===============================
-# LEGACY ENGINE
+# LEGACY ENGINE (sin cambios)
 # ===============================
 def ema(s: pd.Series, n: int) -> pd.Series:
     return s.ewm(span=n, adjust=False).mean()
@@ -174,12 +179,10 @@ def rsi(close: pd.Series, n: int) -> pd.Series:
 
 def legacy_signal(df, cfg):
     lg = cfg.get("legacy", {})
-
     work = df.copy()
     work["ema_fast"] = ema(work["close"], int(lg.get("ema_fast_signal", 50)))
     work["ema_slow"] = ema(work["close"], int(lg.get("ema_slow_signal", 200)))
     work["rsi"] = rsi(work["close"], int(lg.get("rsi_len_signal", 14)))
-
     row = work.iloc[-1]
     if row["ema_fast"] > row["ema_slow"] and row["rsi"] >= float(lg.get("rsi_long", 58)):
         return "buy", row
@@ -188,62 +191,53 @@ def legacy_signal(df, cfg):
     return None, row
 
 # ===============================
-# FEATURE SIGNAL ENGINE
+# FEATURE SIGNAL ENGINE (sin cambios)
 # ===============================
 def feature_signal(row, cfg):
     fp = cfg["feature_prob"]
-
     score_long = 0.0
     score_short = 0.0
-
     if row["ret1"] > 0:
         score_long += fp["ret_1_weight"]
     else:
         score_short += fp["ret_1_weight"]
-
     if row["ret3"] > 0:
         score_long += fp["ret_3_weight"]
     else:
         score_short += fp["ret_3_weight"]
-
     if row["ret12"] > 0:
         score_long += fp["ret_12_weight"]
     else:
         score_short += fp["ret_12_weight"]
-
     if row["range_pos"] > 0.65:
         score_long += fp["range_pos_weight"]
     if row["range_pos"] < 0.35:
         score_short += fp["range_pos_weight"]
-
     if row["vol_ratio"] > 1.2:
         score_long += fp["vol_ratio_weight"] * 0.5
         score_short += fp["vol_ratio_weight"] * 0.5
-
     if row["rv_ratio"] > 1.05:
         score_long += fp["realized_vol_weight"] * 0.5
         score_short += fp["realized_vol_weight"] * 0.5
-
     if row["slope"] > 0:
         score_long += fp["slope_weight"]
     else:
         score_short += fp["slope_weight"]
-
     if row["breakout_up"]:
         score_long += fp["breakout_weight"]
     if row["breakout_dn"]:
         score_short += fp["breakout_weight"]
-
     total = max(score_long + score_short, 1e-9)
     return score_long / total, score_short / total
 
 # ===============================
-# POSITION
+# POSITION (adaptado para Bybit)
 # ===============================
 def get_position(ex, symbol):
     try:
-        pos = ex.fetch_positions([symbol])
-        for p in pos:
+        # Bybit devuelve posiciones en fetch_positions()
+        positions = ex.fetch_positions([symbol])
+        for p in positions:
             contracts = float(p.get("contracts", 0) or 0)
             if contracts != 0:
                 return p
@@ -252,7 +246,7 @@ def get_position(ex, symbol):
     return None
 
 # ===============================
-# ORDER
+# ORDER (sin cambios)
 # ===============================
 def place_order(ex, symbol, side, size):
     try:
@@ -262,7 +256,7 @@ def place_order(ex, symbol, side, size):
         return None
 
 # ===============================
-# STATE INIT
+# STATE INIT (sin cambios)
 # ===============================
 def make_default_state(cfg):
     return {
@@ -302,7 +296,7 @@ def main():
     mode = cfg.get("mode", "feature_prob")
 
     notify(
-        f"[BOT] iniciado | env={'TESTNET' if testnet else 'LIVE'} | "
+        f"[BOT] iniciado | env={'TESTNET' if testnet else 'LIVE'} | exchange=BYBIT | "
         f"symbol={symbol} | mode={mode} | tf_signal={cfg.get('tf_signal')} | "
         f"tf_confirm={cfg.get('tf_confirm')} | tf_trend={cfg.get('tf_trend')}"
     )
@@ -313,7 +307,7 @@ def main():
         try:
             now = now_ts()
 
-            # heartbeat vivo siempre
+            # heartbeat
             if now - int(state.get("last_heartbeat_ts", 0)) >= heartbeat_seconds:
                 pos = get_position(ex, symbol)
                 pos_txt = "OPEN" if pos else "FLAT"
@@ -329,7 +323,7 @@ def main():
                 state["last_heartbeat_ts"] = now
                 save_json(STATE_FILE, state)
 
-            # si hay posición abierta, por ahora solo reporta viva
+            # si hay posición abierta, reportar y esperar
             pos = get_position(ex, symbol)
             if pos:
                 log("[BOT] posición abierta detectada; gestión avanzada aún no implementada")
@@ -345,7 +339,6 @@ def main():
             if mode == "legacy_classic":
                 df = fetch_ohlc(ex, symbol, cfg["tf_signal"], 500)
                 side, row = legacy_signal(df, cfg)
-
                 if side is None:
                     log(
                         f"[BOT][LEGACY] sin entrada | "
@@ -356,24 +349,19 @@ def main():
                     )
                     time.sleep(poll_seconds)
                     continue
-
                 price = float(row["close"])
                 log(f"[BOT][LEGACY] señal {side} @ {price:.2f}")
-
             else:
                 df = fetch_ohlc(ex, symbol, cfg["tf_signal"], 500)
                 feat = build_features(df)
                 row = feat.iloc[-1]
-
                 prob_long, prob_short = feature_signal(row, cfg)
-
                 log(
                     f"[BOT][FEATURE] close={float(row['close']):.2f} | "
                     f"prob_long={prob_long:.3f} | prob_short={prob_short:.3f} | "
                     f"rv={float(row['rv']) if pd.notna(row['rv']) else 0:.6f} | "
                     f"vol_ratio={float(row['vol_ratio']) if pd.notna(row['vol_ratio']) else 0:.3f}"
                 )
-
                 if prob_long >= cfg["feature_prob"]["long_threshold"]:
                     side = "buy"
                 elif prob_short >= cfg["feature_prob"]["short_threshold"]:
@@ -381,12 +369,11 @@ def main():
                 else:
                     time.sleep(poll_seconds)
                     continue
-
                 price = float(row["close"])
                 log(f"[BOT][FEATURE] señal {side} @ {price:.2f}")
 
             # sizing simple
-            size = 0.001
+            size = 0.001   # Ajusta según tu capital y el par (Bybit puede requerir cantidad en BTC o USDT)
 
             order = place_order(ex, symbol, side, size)
             if order is None:
