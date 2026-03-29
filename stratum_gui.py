@@ -708,12 +708,25 @@ async def prompt_save_strategy() -> None:
         append_log(f"[error] no se pudo guardar {path.name}: {e}")
 
 
+from urllib.parse import quote_plus  # Asegúrate de tener esta importación al inicio del archivo
+
 def fetch_binance_klines(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 180) -> pd.DataFrame:
+    # 1. Parámetros de la consulta original
     params = urlencode({"symbol": symbol, "interval": interval, "limit": limit})
-    url = f"https://api.binance.com/api/v3/klines?{params}"
-    req = Request(url, headers={"User-Agent": "Mozilla/5.0 STRATUM/1.0"})
+    target_url = f"https://api.binance.com/api/v3/klines?{params}"
+
+    # 2. URL de tu proxy (cambia si es necesario)
+    PROXY_URL = "https://stratum-proxy.onrender.com"
+
+    # 3. Construir la URL del proxy con el target codificado
+    proxy_request_url = f"{PROXY_URL}/?target={quote_plus(target_url)}"
+
+    # 4. Realizar la petición a través del proxy
+    req = Request(proxy_request_url, headers={"User-Agent": "Mozilla/5.0 STRATUM/1.0"})
     with urlopen(req, timeout=12) as response:
         raw = json.loads(response.read().decode("utf-8"))
+
+    # 5. Procesar la respuesta (igual que antes)
     cols = [
         "open_time", "open", "high", "low", "close", "volume",
         "close_time", "quote_asset_volume", "trades", "taker_buy_base",
@@ -1958,10 +1971,15 @@ def idle_page() -> None:
 
     def fetch_binance_klines_idle(symbol: str = 'BTCUSDT', interval: str = '15m', limit: int = 140) -> pd.DataFrame:
         params = urlencode({'symbol': symbol, 'interval': interval, 'limit': limit})
-        url = f'https://api.binance.com/api/v3/klines?{params}'
-        req = Request(url, headers={'User-Agent': 'Mozilla/5.0 STRATUM/1.0'})
+        target_url = f'https://api.binance.com/api/v3/klines?{params}'
+
+        PROXY_URL = "https://stratum-proxy.onrender.com"
+        proxy_request_url = f"{PROXY_URL}/?target={quote_plus(target_url)}"
+
+        req = Request(proxy_request_url, headers={'User-Agent': 'Mozilla/5.0 STRATUM/1.0'})
         with urlopen(req, timeout=12) as response:
             raw = json.loads(response.read().decode('utf-8'))
+
         cols = [
             'open_time', 'open', 'high', 'low', 'close', 'volume',
             'close_time', 'quote_asset_volume', 'trades',
