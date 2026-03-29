@@ -2047,7 +2047,26 @@ def protected_page() -> None:
         return
     build_dashboard()
 
-# Configuración de sesión (clave secreta desde variable de entorno)
-app.on_connect(lambda: app.storage.user.update({'authenticated': False}) if 'authenticated' not in app.storage.user else None)
+# ... (todo el código anterior, incluyendo build_dashboard, login_page, etc.)
 
-ui.run(title="STRATUM", favicon="◉", port=8083, storage_secret=os.environ.get("STORAGE_SECRET", "default_secret_change_in_production"), reload=False)
+# --- Configuración de sesión y lanzamiento ---
+from nicegui import app  # Importante: debe estar después de build_dashboard
+
+# Función para inicializar sesión de usuario al conectar
+def init_user_session():
+    if 'authenticated' not in app.storage.user:
+        app.storage.user.update({'authenticated': False})
+
+app.on_connect(init_user_session)
+
+# Obtener puerto desde variable de entorno de Render (por defecto 8083)
+port = int(os.environ.get('PORT', 8083))
+
+ui.run(
+    title="STRATUM",
+    favicon="◉",
+    host="0.0.0.0",          # Necesario para Render
+    port=port,
+    storage_secret=os.environ.get("STORAGE_SECRET", "default_secret_change_in_production"),
+    reload=False
+)
