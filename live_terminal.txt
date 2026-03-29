@@ -1,105 +1,3 @@
-[apolo] Calculando indicadores base...
-[apolo] Procesando 140 velas...
-[apolo] Velas 1m: 1000
-[apolo] Resampleando a 5m...
-[apolo] Velas 5m: 200
-[apolo] Calculando indicadores base...
-[apolo] Procesando 140 velas...
-[apolo] [APOLO] 481/500 | mode=legacy_classic | score=-2362.9830 | pnl=-0.11 | pf=0.00 | dd=0.00 | trades=1
-[apolo] [APOLO] 482/500 | mode=legacy_classic | score=-2059.2607 | pnl=-0.05 | pf=0.00 | dd=0.00 | trades=1
-[apolo] [APOLO] 483/500 -> resultado vacío
-[apolo] [APOLO] 484/500 -> resultado vacío
-[apolo] [APOLO] 485/500 -> resultado vacío
-[apolo] [APOLO] 486/500 | mode=legacy_classic | score=-15.1114 | pnl=-0.38 | pf=0.00 | dd=-0.22 | trades=2
-[apolo] [APOLO] 487/500 | mode=legacy_classic | score=-17.2951 | pnl=-0.47 | pf=0.00 | dd=-0.28 | trades=2
-[apolo] [APOLO] 488/500 | mode=legacy_classic | score=-16.2948 | pnl=-0.43 | pf=0.00 | dd=-0.24 | trades=2
-[apolo] [APOLO] Lote 489-496/500 | batch=8 | mode_bias=legacy_classic
-[apolo] Modo legacy (indicadores técnicos)
-[apolo] Descargando datos de 1m desde Bybit...
-[apolo] Modo legacy (indicadores técnicos)
-[apolo] Descargando datos de 1m desde Bybit...
-[apolo] Modo legacy (indicadores técnicos)
-[apolo] Descargando datos de 1m desde Bybit...
-[apolo] Modo legacy (indicadores técnicos)
-[apolo] Descargando datos de 1m desde Bybit...
-[apolo] Velas 1m: 1000
-[apolo] Resampleando a 5m...
-[apolo] Velas 1m: 1000
-[apolo] Resampleando a 5m...
-[apolo] Velas 5m: 200
-[apolo] Calculando indicadores base...
-[apolo] Velas 5m: 200
-[apolo] Calculando indicadores base...
-[apolo] Procesando 140 velas...
-[apolo] Velas 1m: 1000
-[apolo] Resampleando a 5m...
-[apolo] Velas 5m: 200
-[apolo] Calculando indicadores base...
-[apolo] Procesando 140 velas...
-[apolo] Modo legacy (indicadores técnicos)
-[apolo] Descargando datos de 1m desde Bybit...
-[apolo] Modo legacy (indicadores técnicos)
-[apolo] Descargando datos de 1m desde Bybit...
-[apolo] Modo legacy (indicadores técnicos)
-[apolo] Descargando datos de 1m desde Bybit...
-[apolo] Velas 1m: 1000
-[apolo] Resampleando a 5m...
-[apolo] Velas 5m: 200
-[apolo] Calculando indicadores base...
-[apolo] Procesando 140 velas...
-[apolo] Velas 1m: 1000
-[apolo] Resampleando a 5m...
-[apolo] Velas 5m: 200
-[apolo] Calculando indicadores base...
-[apolo] Procesando 140 velas...
-[apolo] Modo legacy (indicadores técnicos)
-[apolo] Descargando datos de 1m desde Bybit...
-[apolo] Velas 1m: 1000
-[apolo] Resampleando a 5m...
-[apolo] Velas 5m: 200
-[apolo] Calculando indicadores base...
-[apolo] Procesando 140 velas...
-[apolo] Velas 1m: 1000
-[apolo] Resampleando a 5m...
-[apolo] Velas 5m: 200
-[apolo] Calculando indicadores base...
-[apolo] Procesando 140 velas...
-[apolo] Velas 1m: 1000
-[apolo] Resampleando a 5m...
-[apolo] Velas 5m: 200
-[apolo] Calculando indicadores base...
-[apolo] Procesando 140 velas...
-[apolo] [APOLO] 489/500 | mode=legacy_classic | score=-2194.0744 | pnl=-0.08 | pf=0.00 | dd=0.00 | trades=1
-[apolo] [APOLO] 490/500 | mode=legacy_classic | score=-12.0866 | pnl=-0.15 | pf=0.00 | dd=-0.08 | trades=2
-[apolo] [APOLO] 491/500 -> resultado vacío
-[apolo] [APOLO] 492/500 -> resultado vacío
-[apolo] [APOLO] 493/500 -> resultado vacío
-[apolo] [APOLO] 494/500 | mode=legacy_classic | score=-13.6967 | pnl=-0.25 | pf=0.00 | dd=-0.14 | trades=2
-[apolo] [APOLO] 495/500 | mode=legacy_classic | score=-14.8035 | pnl=-0.30 | pf=0.00 | dd=-0.18 | trades=2
-[apolo] [APOLO] 496/500 | mode=legacy_classic | score=-16.6237 | pnl=-0.45 | pf=0.00 | dd=-0.25 | trades=2
-[apolo] [APOLO] Lote 497-500/500 | batch=4 | mode_bias=legacy_classic
-[apolo] Modo legacy (indicadores técnicos)
-[apolo] Descargando datos de 1m desde Bybit...
-[apolo] Modo legacy (indicadores técnicos)
-[apolo] Descargando datos de 1m desde Bybit...
-[apolo] Modo legacy (indicadores técnicos)
-[apolo] Descargando datos de 1m desde Bybit...
-[apolo] Modo legacy (indicadores técnicos)
-[apolo] Descargando datos de 1m desde Bybit...
-[apolo] Velas 1m: 1000
-[apolo] Resampleando a 5m...
-[apolo] Velas 5m: 200
-[apolo] Calculando indicadores base...
-[apolo] Velas 1m: 1000
-[apolo] Resampleando a 5m...
-[apolo] Procesando 140 velas...
-[apolo] Velas 5m: 200
-[apolo] Calculando indicadores base...
-[apolo] Procesando 140 velas...
-[apolo] Velas 1m: 1000
-[apolo] Resampleando a 5m...
-[apolo] Velas 5m: 200
-[apolo] Calculando indicadores base...
 [apolo] Procesando 140 velas...
 [apolo] Velas 1m: 1000
 [apolo] Resampleando a 5m...
@@ -198,3 +96,105 @@ Procesando 141 velas...
 [bot] [BOT][LEGACY] sin entrada | close=66548.90 | ema_fast=66778.80 | ema_slow=67592.35 | rsi=47.45
 [news] US Dollar Index stays below 100.00 as Trump pause hits safe haven - fxstreet.com · 2026-03-27 03:37
 [bot] [BOT][LEGACY] sin entrada | close=66547.90 | ema_fast=66778.78 | ema_slow=67592.34 | rsi=47.43
+[news] The WSJ Dollar Index falls 0.34% to 96.00 - MSN · 2026-03-23 21:21
+[bot] [BOT][LEGACY] sin entrada | close=66547.80 | ema_fast=66778.77 | ema_slow=67592.34 | rsi=47.43
+[news] This Artificial Intelligence (AI) Stock Could Handily Outperform Management's Own Guidance. Buy It Now. - The Motley Fool · 2026-03-29 09:53
+[bot] [BOT][HEARTBEAT] 2026-03-29 11:04:34 UTC | mode=legacy_classic | symbol=BTC/USDT:USDT | tf=30m | status=FLAT | cooldown_left=0s
+[bot] [BOT][LEGACY] sin entrada | close=66542.50 | ema_fast=66778.64 | ema_slow=67592.28 | rsi=47.32
+[bot] [BOT][LEGACY] sin entrada | close=66551.00 | ema_fast=66778.85 | ema_slow=67592.37 | rsi=47.49
+[news] Tech Days returns to UNM with focus on artificial intelligence, innovation - UNM Newsroom · 2026-03-28 16:13
+[bot] [BOT][LEGACY] sin entrada | close=66615.00 | ema_fast=66780.47 | ema_slow=67593.07 | rsi=48.77
+[bot] [BOT][LEGACY] sin entrada | close=66662.60 | ema_fast=66781.68 | ema_slow=67593.60 | rsi=49.68
+[bot] [BOT][LEGACY] sin entrada | close=66653.00 | ema_fast=66781.44 | ema_slow=67593.49 | rsi=49.50
+[news] Are Central Banks Selling Gold? - Robin J Brooks | Substack · 2026-03-29 09:03
+[bot] [BOT][LEGACY] sin entrada | close=66660.60 | ema_fast=66781.63 | ema_slow=67593.58 | rsi=49.65
+[bot] [BOT][HEARTBEAT] 2026-03-29 11:05:39 UTC | mode=legacy_classic | symbol=BTC/USDT:USDT | tf=30m | status=FLAT | cooldown_left=0s
+[bot] [BOT][LEGACY] sin entrada | close=66649.60 | ema_fast=66781.35 | ema_slow=67593.46 | rsi=49.44
+[news] India central bank rupee curbs to force unwinding of arbitrage bets, traders say - Reuters · 2026-03-28 13:03
+[bot] [BOT][LEGACY] sin entrada | close=66648.20 | ema_fast=66781.31 | ema_slow=67593.44 | rsi=49.41
+[bot] [BOT][LEGACY] sin entrada | close=66632.20 | ema_fast=66780.91 | ema_slow=67593.26 | rsi=49.11
+[news] Bank of Canada to Protect Economy From Risk of Persistent Inflation, No. 2 Official Says - WSJ · 2026-03-26 18:46
+[bot] [BOT][LEGACY] sin entrada | close=66634.30 | ema_fast=66780.96 | ema_slow=67593.29 | rsi=49.15
+[bot] [BOT][LEGACY] sin entrada | close=66654.00 | ema_fast=66781.46 | ema_slow=67593.50 | rsi=49.52
+[news] Community Food Bank of Central Alabama to double space with new Bessemer warehouse - WBRC · 2026-03-29 03:16
+[bot] [BOT][HEARTBEAT] 2026-03-29 11:06:42 UTC | mode=legacy_classic | symbol=BTC/USDT:USDT | tf=30m | status=FLAT | cooldown_left=0s
+[bot] [BOT][LEGACY] sin entrada | close=66664.70 | ema_fast=66781.73 | ema_slow=67593.62 | rsi=49.72
+[news] feed actualizado con 12 titulares macro / energía / geopolítica
+[bot] [BOT][LEGACY] sin entrada | close=66705.60 | ema_fast=66782.77 | ema_slow=67594.07 | rsi=50.48
+[news] Community Food Bank of Central Alabama to double space with new Bessemer warehouse - WBRC · 2026-03-29 03:16
+[bot] [BOT][LEGACY] sin entrada | close=66815.40 | ema_fast=66785.55 | ema_slow=67595.28 | rsi=52.40
+[bot] [BOT][LEGACY] sin entrada | close=66789.80 | ema_fast=66784.90 | ema_slow=67595.00 | rsi=51.97
+[news] Gold futures fell as U.S. Treasury yields and dollar recovered. - CME Group · 2026-03-25 02:13
+[bot] [BOT][LEGACY] sin entrada | close=66771.90 | ema_fast=66784.45 | ema_slow=67594.80 | rsi=51.66
+[bot] [BOT][LEGACY] sin entrada | close=66740.60 | ema_fast=66783.65 | ema_slow=67594.46 | rsi=51.11
+[bot] [BOT][HEARTBEAT] 2026-03-29 11:07:47 UTC | mode=legacy_classic | symbol=BTC/USDT:USDT | tf=30m | status=FLAT | cooldown_left=0s
+[bot] [BOT][LEGACY] sin entrada | close=66731.10 | ema_fast=66783.41 | ema_slow=67594.35 | rsi=50.94
+[news] Strong price pressure on gold, silver as bond yields rise - KITCO · 2026-03-26 12:00
+[bot] [BOT][LEGACY] sin entrada | close=66742.30 | ema_fast=66783.70 | ema_slow=67594.47 | rsi=51.14
+[bot] [BOT][LEGACY] sin entrada | close=66740.70 | ema_fast=66783.66 | ema_slow=67594.46 | rsi=51.11
+[news] U.S. Dollar Gains Ground Despite Falling Treasury Yields: Analysis For EUR/USD, GBP/USD, USD/CAD, USD/JPY - fxempire.com · 2026-03-25 17:03
+[bot] [BOT][LEGACY] sin entrada | close=66762.20 | ema_fast=66784.20 | ema_slow=67594.69 | rsi=51.49
+[bot] [BOT][LEGACY] sin entrada | close=66732.80 | ema_fast=66783.46 | ema_slow=67594.37 | rsi=50.97
+[news] US Dollar Index stays below 100.00 as Trump pause hits safe haven - FXStreet · 2026-03-27 03:37
+[bot] [BOT][LEGACY] sin entrada | close=66712.20 | ema_fast=66782.93 | ema_slow=67594.14 | rsi=50.60
+[bot] [BOT][HEARTBEAT] 2026-03-29 11:08:52 UTC | mode=legacy_classic | symbol=BTC/USDT:USDT | tf=30m | status=FLAT | cooldown_left=0s
+[bot] [BOT][LEGACY] sin entrada | close=66712.50 | ema_fast=66782.94 | ema_slow=67594.15 | rsi=50.60
+[bot] [BOT][LEGACY] sin entrada | close=66712.80 | ema_fast=66782.95 | ema_slow=67594.15 | rsi=50.61
+[news] Gold bearish, dollar index bullish, treasury yields higher amid Iran war- Why the safe haven is crashing? - WION · 2026-03-23 08:52
+[bot] [BOT][LEGACY] sin entrada | close=66716.90 | ema_fast=66783.05 | ema_slow=67594.19 | rsi=50.68
+[news] This Artificial Intelligence (AI) Stock Could Handily Outperform Management's Own Guidance. Buy It Now. - The Motley Fool · 2026-03-29 09:53
+[bot] [BOT][LEGACY] sin entrada | close=66729.20 | ema_fast=66783.37 | ema_slow=67594.33 | rsi=50.91
+[bot] [BOT][LEGACY] sin entrada | close=66729.30 | ema_fast=66783.37 | ema_slow=67594.33 | rsi=50.91
+[news] Tech Days returns to UNM with focus on artificial intelligence, innovation - UNM Newsroom · 2026-03-28 16:13
+[bot] [BOT][HEARTBEAT] 2026-03-29 11:09:56 UTC | mode=legacy_classic | symbol=BTC/USDT:USDT | tf=30m | status=FLAT | cooldown_left=0s
+[bot] [BOT][LEGACY] sin entrada | close=66735.50 | ema_fast=66783.52 | ema_slow=67594.40 | rsi=51.02
+[bot] [BOT][LEGACY] sin entrada | close=66741.80 | ema_fast=66783.68 | ema_slow=67594.47 | rsi=51.13
+[bot] [BOT][LEGACY] sin entrada | close=66750.00 | ema_fast=66783.89 | ema_slow=67594.56 | rsi=51.28
+[news] Are Central Banks Selling Gold? - Robin J Brooks | Substack · 2026-03-29 09:03
+[bot] [BOT][LEGACY] sin entrada | close=66745.40 | ema_fast=66783.78 | ema_slow=67594.51 | rsi=51.19
+[bot] [BOT][LEGACY] sin entrada | close=66773.30 | ema_fast=66784.48 | ema_slow=67594.81 | rsi=51.68
+[news] India central bank rupee curbs to force unwinding of arbitrage bets, traders say - Reuters · 2026-03-28 13:03
+[bot] [BOT][LEGACY] sin entrada | close=66768.80 | ema_fast=66784.37 | ema_slow=67594.76 | rsi=51.60
+[bot] [BOT][HEARTBEAT] 2026-03-29 11:10:59 UTC | mode=legacy_classic | symbol=BTC/USDT:USDT | tf=30m | status=FLAT | cooldown_left=0s
+[bot] [BOT][LEGACY] sin entrada | close=66760.70 | ema_fast=66784.16 | ema_slow=67594.68 | rsi=51.46
+[news] Bank of Canada to Protect Economy From Risk of Persistent Inflation, No. 2 Official Says - WSJ · 2026-03-26 18:46
+[bot] [BOT][LEGACY] sin entrada | close=66768.80 | ema_fast=66784.37 | ema_slow=67594.76 | rsi=51.60
+[bot] [BOT][LEGACY] sin entrada | close=66784.00 | ema_fast=66784.75 | ema_slow=67594.93 | rsi=51.87
+[bot] [BOT][LEGACY] sin entrada | close=66786.80 | ema_fast=66784.82 | ema_slow=67594.96 | rsi=51.92
+[news] European Central Bank holds rates steady, warns outlook is 'significantly more uncertain' - CNBC · 2026-03-19 07:00
+[bot] [BOT][LEGACY] sin entrada | close=66761.70 | ema_fast=66784.19 | ema_slow=67594.69 | rsi=51.48
+[bot] [BOT][LEGACY] sin entrada | close=66747.50 | ema_fast=66783.83 | ema_slow=67594.53 | rsi=51.23
+[news] Community Food Bank of Central Alabama to double space with new Bessemer warehouse - WBRC · 2026-03-29 03:16
+[bot] [BOT][HEARTBEAT] 2026-03-29 11:12:03 UTC | mode=legacy_classic | symbol=BTC/USDT:USDT | tf=30m | status=FLAT | cooldown_left=0s
+[bot] [BOT][LEGACY] sin entrada | close=66740.00 | ema_fast=66783.64 | ema_slow=67594.45 | rsi=51.10
+[bot] [BOT][LEGACY] sin entrada | close=66749.20 | ema_fast=66783.87 | ema_slow=67594.55 | rsi=51.26
+[news] Gold futures fell as U.S. Treasury yields and dollar recovered. - CME Group · 2026-03-25 02:13
+[bot] [BOT][LEGACY] sin entrada | close=66749.50 | ema_fast=66783.88 | ema_slow=67594.55 | rsi=51.27
+[bot] [BOT][LEGACY] sin entrada | close=66747.70 | ema_fast=66783.83 | ema_slow=67594.53 | rsi=51.23
+[bot] [BOT][LEGACY] sin entrada | close=66747.20 | ema_fast=66783.82 | ema_slow=67594.53 | rsi=51.23
+[news] Strong price pressure on gold, silver as bond yields rise - KITCO · 2026-03-26 12:00
+[bot] [BOT][LEGACY] sin entrada | close=66774.50 | ema_fast=66784.51 | ema_slow=67594.83 | rsi=51.70
+[bot] [BOT][HEARTBEAT] 2026-03-29 11:13:07 UTC | mode=legacy_classic | symbol=BTC/USDT:USDT | tf=30m | status=FLAT | cooldown_left=0s
+[bot] [BOT][LEGACY] sin entrada | close=66750.00 | ema_fast=66783.89 | ema_slow=67594.56 | rsi=51.28
+[news] U.S. Dollar Gains Ground Despite Falling Treasury Yields: Analysis For EUR/USD, GBP/USD, USD/CAD, USD/JPY - fxempire.com · 2026-03-25 17:03
+[bot] [BOT][LEGACY] sin entrada | close=66750.10 | ema_fast=66783.89 | ema_slow=67594.56 | rsi=51.28
+[bot] [BOT][LEGACY] sin entrada | close=66748.00 | ema_fast=66783.84 | ema_slow=67594.54 | rsi=51.24
+[bot] [BOT][LEGACY] sin entrada | close=66747.90 | ema_fast=66783.84 | ema_slow=67594.54 | rsi=51.24
+[news] US Dollar Index stays below 100.00 as Trump pause hits safe haven - FXStreet · 2026-03-27 03:37
+[bot] [BOT][LEGACY] sin entrada | close=66746.40 | ema_fast=66783.80 | ema_slow=67594.52 | rsi=51.21
+[bot] [BOT][LEGACY] sin entrada | close=66725.60 | ema_fast=66783.27 | ema_slow=67594.29 | rsi=50.84
+[news] Gold bearish, dollar index bullish, treasury yields higher amid Iran war- Why the safe haven is crashing? - WION · 2026-03-23 08:52
+[bot] [BOT][HEARTBEAT] 2026-03-29 11:14:11 UTC | mode=legacy_classic | symbol=BTC/USDT:USDT | tf=30m | status=FLAT | cooldown_left=0s
+[bot] [BOT][LEGACY] sin entrada | close=66736.50 | ema_fast=66783.55 | ema_slow=67594.41 | rsi=51.04
+[bot] [BOT][LEGACY] sin entrada | close=66724.40 | ema_fast=66783.24 | ema_slow=67594.28 | rsi=50.82
+[news] This Artificial Intelligence (AI) Stock Could Handily Outperform Management's Own Guidance. Buy It Now. - The Motley Fool · 2026-03-29 09:53
+[bot] [BOT][LEGACY] sin entrada | close=66719.30 | ema_fast=66783.11 | ema_slow=67594.22 | rsi=50.73
+[bot] [BOT][LEGACY] sin entrada | close=66718.00 | ema_fast=66783.08 | ema_slow=67594.21 | rsi=50.70
+[bot] [BOT][LEGACY] sin entrada | close=66740.60 | ema_fast=66783.65 | ema_slow=67594.46 | rsi=51.11
+[news] Tech Days returns to UNM with focus on artificial intelligence, innovation - UNM Newsroom · 2026-03-28 16:13
+[bot] [BOT][LEGACY] sin entrada | close=66740.70 | ema_fast=66783.66 | ema_slow=67594.46 | rsi=51.11
+[bot] [BOT][HEARTBEAT] 2026-03-29 11:15:16 UTC | mode=legacy_classic | symbol=BTC/USDT:USDT | tf=30m | status=FLAT | cooldown_left=0s
+[bot] [BOT][LEGACY] sin entrada | close=66742.10 | ema_fast=66783.69 | ema_slow=67594.47 | rsi=51.14
+[news] Are Central Banks Selling Gold? - Robin J Brooks | Substack · 2026-03-29 09:03
+[bot] [BOT][LEGACY] sin entrada | close=66759.90 | ema_fast=66784.14 | ema_slow=67594.67 | rsi=51.45
+[bot] [BOT][LEGACY] sin entrada | close=66755.50 | ema_fast=66784.03 | ema_slow=67594.62 | rsi=51.37

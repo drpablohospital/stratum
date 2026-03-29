@@ -709,12 +709,15 @@ async def prompt_save_strategy() -> None:
 
 
 # ======================== Kucoin API (reemplaza a Binance y Bybit) ========================
+import os
+import requests
+from requests.auth import HTTPProxyAuth
+
 def fetch_kucoin_klines(symbol: str = "BTC-USDT", interval: str = "15m", limit: int = 180) -> pd.DataFrame:
     """
-    Obtiene velas de KuCoin (API pública, sin autenticación).
-    Intervalos soportados: 1min,3min,5min,15min,30min,1hour,2hour,4hour,6hour,8hour,12hour,1day,1week
+    Obtiene velas de KuCoin usando proxy si está configurado en variables de entorno.
     """
-    # Mapeo de intervalos de NiceGUI a formato KuCoin
+    # Mapeo de intervalos
     interval_map = {
         "1m": "1min",
         "3m": "3min",
@@ -730,18 +733,36 @@ def fetch_kucoin_klines(symbol: str = "BTC-USDT", interval: str = "15m", limit: 
         "1w": "1week",
     }
     kucoin_interval = interval_map.get(interval, "15min")
-    # KuCoin espera el símbolo con guión (BTC-USDT)
     if symbol == "BTCUSDT":
         symbol = "BTC-USDT"
     url = f"https://api.kucoin.com/api/v1/market/candles?type={kucoin_interval}&symbol={symbol}&limit={limit}"
-    req = Request(url, headers={"User-Agent": "Mozilla/5.0 STRATUM/1.0"})
-    with urlopen(req, timeout=12) as response:
-        data = json.loads(response.read().decode("utf-8"))
+
+    # Leer configuración del proxy desde variables de entorno
+    proxy_url = os.environ.get("PROXY_URL")
+    proxy_user = os.environ.get("PROXY_USER")
+    proxy_pass = os.environ.get("PROXY_PASS")
+
+    proxies = None
+    auth = None
+    if proxy_url and proxy_user and proxy_pass:
+        proxies = {"http": proxy_url, "https": proxy_url}
+        auth = HTTPProxyAuth(proxy_user, proxy_pass)
+        print(f"[proxy] Usando proxy: {proxy_url}")  # Opcional, para logs
+    else:
+        print("[proxy] No se encontraron variables de proxy, conectando directamente")
+
+    if proxies:
+        response = requests.get(url, proxies=proxies, auth=auth, timeout=12)
+    else:
+        response = requests.get(url, timeout=12)
+
+    response.raise_for_status()
+    data = response.json()
+
     if data.get("code") != "200000":
         raise Exception(f"KuCoin API error: {data.get('msg')}")
-    # data["data"] es una lista de listas: [time, open, close, high, low, volume, turnover]
+
     klines = data["data"]
-    # Orden ascendente por tiempo (KuCoin devuelve ascendente por defecto)
     df = pd.DataFrame(klines, columns=["time", "open", "close", "high", "low", "volume", "turnover"])
     for col in ["open", "high", "low", "close", "volume"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -751,9 +772,8 @@ def fetch_kucoin_klines(symbol: str = "BTC-USDT", interval: str = "15m", limit: 
 
 
 def fetch_kucoin_klines_idle(symbol: str = "BTC-USDT", interval: str = "15m", limit: int = 140) -> pd.DataFrame:
-    """Versión idle de la función anterior."""
+    """Versión idle, igual pero con proxy."""
     return fetch_kucoin_klines(symbol, interval, limit)
-
 
 def infer_trade_columns(df: pd.DataFrame) -> tuple[str | None, str | None, str | None]:
     time_candidates = ["entry_time", "time", "timestamp", "ts", "datetime"]
