@@ -1840,6 +1840,303 @@ def add_styles() -> None:
     )
 
 
+# ======================== IDLE PAGE (INTEGRADA) ========================
+IDLE_ASSET_BG = BASE_DIR / "cryp_co_012.png"
+
+@ui.page("/idle")
+def idle_page() -> None:
+    """Página STRATUM Idle (monitoreo pasivo) integrada en la misma aplicación."""
+    # Copiar estado compartido desde la GUI principal
+    idle_state = {
+        'last_terminal_line': '[idle] waiting for signal...',
+        'headline': 'Awaiting signal',
+        'strategy': current_strategy_name,
+        'apolo_status': 'IDLE',
+        'bot_status': 'LISTENING',
+        'best_score': '—',
+        'updated_at': '—',
+        'terminal_lines': ['[idle] waiting for signal...'],
+        'btc_price': '—',
+        'btc_change_day': '—',
+        'btc_day_range': '—',
+        'btc_trend': 'Neutral',
+    }
+
+    def safe_read_text(path: Path, fallback: str = '') -> str:
+        try:
+            if path.exists():
+                return path.read_text(encoding='utf-8', errors='ignore')
+        except Exception:
+            pass
+        return fallback
+
+    def load_shared_state() -> dict:
+        try:
+            if AMBIENT_STATE_FILE.exists():
+                return json.loads(AMBIENT_STATE_FILE.read_text(encoding='utf-8'))
+        except Exception:
+            pass
+        return {}
+
+    def tail_lines(path: Path, limit: int = 40) -> list[str]:
+        text = safe_read_text(path)
+        if not text:
+            return []
+        return [line.strip() for line in text.splitlines() if line.strip()][-limit:]
+
+    def detect_best_score() -> str:
+        try:
+            if not APOLO_BEST_FILE.exists():
+                return '—'
+            data = json.loads(APOLO_BEST_FILE.read_text(encoding='utf-8'))
+            for key in ('score', 'best_score', 'objective', 'value'):
+                if key in data:
+                    return str(data[key])
+            return 'saved'
+        except Exception:
+            return '—'
+
+    def detect_apolo_status(shared: dict, last_line: str) -> str:
+        if shared.get('apolo_running'):
+            return 'ACTIVE'
+        progress = safe_read_text(APOLO_PROGRESS_FILE).lower()
+        if 'complet' in progress or 'finished' in progress:
+            return 'DONE'
+        if '[apolo]' in last_line.lower():
+            return 'ACTIVE'
+        return 'IDLE'
+
+    def detect_bot_status(shared: dict, last_line: str) -> str:
+        if shared.get('bot_running'):
+            return 'ACTIVE'
+        low = last_line.lower()
+        if '[error]' in low or 'traceback' in low:
+            return 'ERROR'
+        if '[backtest]' in low:
+            return 'BACKTEST'
+        if '[bot]' in low:
+            return 'ACTIVE'
+        return 'LISTENING'
+
+    def extract_headline(line: str) -> str:
+        if not line:
+            return 'Awaiting signal'
+        cleaned = line.strip()
+        for prefix in ('[news]', '[watch]', '[apolo]', '[bot]', '[backtest]', '[report]', '[config]'):
+            if cleaned.lower().startswith(prefix):
+                return cleaned[len(prefix):].strip() or 'Awaiting signal'
+        return cleaned
+
+    def signal_mode(line: str) -> str:
+        low = line.lower()
+        if low.startswith('[news]'):
+            return 'Market intelligence'
+        if low.startswith('[apolo]'):
+            return 'Optimization trace'
+        if low.startswith('[bot]'):
+            return 'Execution trace'
+        if low.startswith('[backtest]'):
+            return 'Backtest trace'
+        if low.startswith('[error]'):
+            return 'Critical state'
+        return 'System listening'
+
+    def build_terminal_markup(lines: list[str]) -> str:
+        shown = list(reversed(lines[-8:])) if lines else ['[idle] waiting for signal...']
+        body = ''.join(f'<div class="ambient-log-line">{line}</div>' for line in shown)
+        return f'''
+        <div class="ambient-terminal-glass">
+          <div class="ambient-terminal-head">
+            <span class="ambient-dot coral"></span>
+            <span class="ambient-dot peach"></span>
+            <span class="ambient-dot cyan"></span>
+            <span class="ambient-terminal-title">LIVE TRACE</span>
+          </div>
+          <div class="ambient-terminal-body">{body}</div>
+        </div>
+        '''
+
+    def fetch_binance_klines_idle(symbol: str = 'BTCUSDT', interval: str = '15m', limit: int = 140) -> pd.DataFrame:
+        params = urlencode({'symbol': symbol, 'interval': interval, 'limit': limit})
+        url = f'https://api.binance.com/api/v3/klines?{params}'
+        req = Request(url, headers={'User-Agent': 'Mozilla/5.0 STRATUM/1.0'})
+        with urlopen(req, timeout=12) as response:
+            raw = json.loads(response.read().decode('utf-8'))
+        cols = [
+            'open_time', 'open', 'high', 'low', 'close', 'volume',
+            'close_time', 'quote_asset_volume', 'trades',
+            'taker_buy_base', 'taker_buy_quote', 'ignore'
+        ]
+        df = pd.DataFrame(raw, columns=cols)
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
+        return df[['open_time', 'open', 'high', 'low', 'close', 'volume']]
+
+    def update_market_stats(df: pd.DataFrame) -> None:
+        if df.empty:
+            return
+        last_close = float(df['close'].iloc[-1])
+        first_open = float(df['open'].iloc[0])
+        day_change_pct = ((last_close - first_open) / first_open) * 100 if first_open else 0.0
+        day_high = float(df['high'].max())
+        day_low = float(df['low'].min())
+        sma_fast = df['close'].tail(12).mean()
+        sma_slow = df['close'].tail(36).mean()
+        trend = 'Bullish drift' if sma_fast > sma_slow else 'Bearish drift' if sma_fast < sma_slow else 'Neutral'
+        idle_state['btc_price'] = f'{last_close:,.2f}'
+        idle_state['btc_change_day'] = f'{day_change_pct:+.2f}%'
+        idle_state['btc_day_range'] = f'{day_low:,.0f} — {day_high:,.0f}'
+        idle_state['btc_trend'] = trend
+
+    def build_candles_idle() -> go.Figure:
+        df = fetch_binance_klines_idle(interval='15m', limit=140)
+        update_market_stats(df)
+        fig = go.Figure()
+        fig.add_trace(go.Candlestick(
+            x=df['open_time'],
+            open=df['open'],
+            high=df['high'],
+            low=df['low'],
+            close=df['close'],
+            increasing_line_color='#88d6e2',
+            decreasing_line_color='#e6a48d',
+            increasing_fillcolor='rgba(136,214,226,.70)',
+            decreasing_fillcolor='rgba(230,164,141,.62)',
+            whiskerwidth=0.40,
+            name='BTC 15m',
+        ))
+        ma = df['close'].rolling(12).mean()
+        fig.add_trace(go.Scatter(
+            x=df['open_time'],
+            y=ma,
+            mode='lines',
+            line=dict(color='rgba(35,68,107,.55)', width=2),
+            name='MA 12',
+            hoverinfo='skip',
+        ))
+        fig.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=0, r=0, t=10, b=0),
+            showlegend=False,
+            xaxis=dict(showgrid=False, visible=False, rangeslider=dict(visible=False)),
+            yaxis=dict(showgrid=False, visible=False),
+        )
+        return fig
+
+    def render_candles_idle(candle_box) -> None:
+        if candle_box is None:
+            return
+        try:
+            candle_box.clear()
+            with candle_box:
+                ui.plotly(build_candles_idle()).classes('w-full h-64')
+        except Exception:
+            pass
+
+    def refresh_idle_state(hero_label, signal_label, strategy_label, meta_label,
+                           apolo_label, bot_label, best_label,
+                           btc_price_label, btc_change_label, btc_range_label, btc_trend_label,
+                           clock_label, terminal_box, candle_box):
+        shared = load_shared_state()
+        lines = shared.get('last_terminal_lines') or tail_lines(LIVE_TERMINAL_FILE, 40)
+        last_line = shared.get('last_terminal_line') or (lines[-1] if lines else idle_state['last_terminal_line'])
+        idle_state['last_terminal_line'] = last_line
+        idle_state['terminal_lines'] = lines[-40:] if lines else [idle_state['last_terminal_line']]
+        idle_state['headline'] = extract_headline(last_line)
+        idle_state['strategy'] = shared.get('strategy', idle_state['strategy'])
+        idle_state['apolo_status'] = detect_apolo_status(shared, last_line)
+        idle_state['bot_status'] = detect_bot_status(shared, last_line)
+        idle_state['best_score'] = detect_best_score()
+        idle_state['updated_at'] = shared.get('updated_at', time.strftime('%H:%M:%S'))
+
+        # Actualizar UI
+        if hero_label:
+            hero_label.set_text(idle_state['headline'])
+        if signal_label:
+            signal_label.set_text(signal_mode(idle_state['last_terminal_line']))
+        if strategy_label:
+            strategy_label.set_text(f'STRATEGY · {idle_state["strategy"]}')
+        if meta_label:
+            meta_label.set_text(f'Updated {idle_state["updated_at"]} · DOGMA COIN SAPI DE CV')
+        if apolo_label:
+            apolo_label.set_text(f'APOLO {idle_state["apolo_status"]}')
+        if bot_label:
+            bot_label.set_text(f'BOT {idle_state["bot_status"]}')
+        if best_label:
+            best_label.set_text(f'BEST SCORE {idle_state["best_score"]}')
+        if btc_price_label:
+            btc_price_label.set_text(idle_state['btc_price'])
+        if btc_change_label:
+            btc_change_label.set_text(idle_state['btc_change_day'])
+        if btc_range_label:
+            btc_range_label.set_text(idle_state['btc_day_range'])
+        if btc_trend_label:
+            btc_trend_label.set_text(idle_state['btc_trend'])
+        if clock_label:
+            clock_label.set_text(time.strftime('%H:%M:%S'))
+        if terminal_box:
+            terminal_box.set_content(build_terminal_markup(idle_state['terminal_lines']))
+
+    # Construir la interfaz Idle
+    add_styles()  # Reutilizar estilos de la GUI principal
+
+    with ui.column().classes('ambient-shell w-full'):
+        with ui.element('div').classes('ambient-surface'):
+            with ui.element('div').classes('ambient-grid'):
+                with ui.element('div').classes('ambient-left'):
+                    with ui.element('div').classes('brand-row'):
+                        with ui.element('div').classes('brand-wrap'):
+                            ui.label('STRATUM').classes('brand-title')
+                            ui.label('by DOGMA · ambient decision surface').classes('brand-sub')
+                        with ui.element('div').classes('top-right-wrap'):
+                            strategy_label = ui.label(f'STRATEGY · {idle_state["strategy"]}').classes('strategy-pill')
+                            ui.button('Abrir STRATUM GUI', on_click=lambda: ui.navigate.to('/')).classes('ambient-nav-btn')
+                    with ui.element('div').classes('hero-block'):
+                        ui.label('Latest signal').classes('eyebrow')
+                        hero_label = ui.label(idle_state['headline']).classes('hero-text')
+                        signal_label = ui.label(signal_mode(idle_state['last_terminal_line'])).classes('signal-label')
+                        clock_label = ui.label(time.strftime('%H:%M:%S')).classes('clock-line')
+                    with ui.element('div').classes('meta-row'):
+                        apolo_label = ui.label(f'APOLO {idle_state["apolo_status"]}').classes('soft-chip')
+                        bot_label = ui.label(f'BOT {idle_state["bot_status"]}').classes('soft-chip')
+                        best_label = ui.label(f'BEST SCORE {idle_state["best_score"]}').classes('soft-chip')
+                    meta_label = ui.label(f'Updated {idle_state["updated_at"]} · DOGMA COIN SAPI DE CV').classes('meta-line')
+                with ui.element('div').classes('ambient-right'):
+                    with ui.element('div').classes('float-panel'):
+                        ui.label('BTC market pulse · 15m').classes('panel-kicker')
+                        with ui.element('div').classes('market-stats'):
+                            with ui.element('div').classes('stat-card'):
+                                ui.label('Last price').classes('stat-k')
+                                btc_price_label = ui.label(idle_state['btc_price']).classes('stat-v')
+                            with ui.element('div').classes('stat-card'):
+                                ui.label('Day change').classes('stat-k')
+                                btc_change_label = ui.label(idle_state['btc_change_day']).classes('stat-v')
+                            with ui.element('div').classes('stat-card'):
+                                ui.label('Day range').classes('stat-k')
+                                btc_range_label = ui.label(idle_state['btc_day_range']).classes('stat-v')
+                            with ui.element('div').classes('stat-card'):
+                                ui.label('Trend').classes('stat-k')
+                                btc_trend_label = ui.label(idle_state['btc_trend']).classes('stat-v')
+                        with ui.element('div').classes('candle-glass'):
+                            candle_box = ui.column().classes('w-full')
+                        terminal_box = ui.html(build_terminal_markup(idle_state['terminal_lines'])).classes('w-full')
+
+    # Timer de refresco
+    def idle_refresh_loop():
+        refresh_idle_state(hero_label, signal_label, strategy_label, meta_label,
+                           apolo_label, bot_label, best_label,
+                           btc_price_label, btc_change_label, btc_range_label, btc_trend_label,
+                           clock_label, terminal_box, candle_box)
+        render_candles_idle(candle_box)
+
+    ui.timer(2.0, idle_refresh_loop)
+    ui.timer(30.0, lambda: render_candles_idle(candle_box))
+    idle_refresh_loop()  # inicial
+
+
+# ======================== DASHBOARD PRINCIPAL (con enlace a idle) ========================
 def build_dashboard() -> None:
     """Construye la interfaz principal de STRATUM (sin autenticación)."""
     global terminal_html, stats_card, raw_report_box, plot_eq, plot_pie, plot_hist, plot_scatter, plot_bar, live_chart_box
@@ -1891,7 +2188,8 @@ def build_dashboard() -> None:
                         ui.button("Cargar estrategia", on_click=prompt_load_config).classes("btn-soft")
                         ui.button("Guardar estrategia", on_click=prompt_save_strategy).classes("btn-soft")
                         ui.button("Iniciar bot de trading", on_click=prompt_launch_bot).classes("btn-warm")
-                        ui.button("Abrir STRATUM IDLE", on_click=lambda: ui.navigate.to("http://127.0.0.1:8082")).classes("btn-soft")
+                        ui.button("Vista IDLE", on_click=lambda: ui.navigate.to("/idle")).classes("btn-soft")
+                        ui.button("Abrir STRATUM IDLE", on_click=lambda: ui.navigate.to("/idle")).classes("btn-soft")  # redundante pero claro
 
                 with ui.tabs().classes("glass-tabs w-full") as tabs:
                     tab_params = ui.tab("Parámetros")
@@ -2017,47 +2315,9 @@ def build_dashboard() -> None:
     refresh_live_macro_news(background=True)
     refresh_live_chart(force=True)
     write_ambient_state()
-    # Lanzar scripts en segundo plano (solo una vez)
-    launch_background_scripts()
 
-import subprocess
-import sys
 
-def launch_background_scripts():
-    """Lanza otros scripts de STRATUM como procesos independientes."""
-    scripts = [
-        {"name": "stratum_idle", "port": 8082, "file": "stratum_idle.py"},
-        {"name": "apolo", "port": 8084, "file": "apolo.py"},  # si apolo tiene interfaz web
-        # Agrega aquí otros scripts que quieras ejecutar, por ejemplo:
-        # {"name": "oracle", "port": 8085, "file": "oracle.py"},
-    ]
-    for script in scripts:
-        try:
-            # Determinar si el script usa un puerto (por ejemplo, stratum_idle tiene ui.run(port=8082))
-            # Pasamos el puerto como argumento si el script lo acepta, o lo forzamos por entorno.
-            env = os.environ.copy()
-            env["PORT"] = str(script["port"])
-            proc = subprocess.Popen(
-                [sys.executable, script["file"]],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env=env,
-                cwd=BASE_DIR,
-                text=True,
-                bufsize=1
-            )
-            # Opcional: leer stdout/stderr y registrarlos en la terminal
-            def log_output(pipe, prefix):
-                for line in iter(pipe.readline, ''):
-                    if line.strip():
-                        queue_log(f"[{script['name']}] {line.strip()}")
-            threading.Thread(target=log_output, args=(proc.stdout, script["name"]), daemon=True).start()
-            threading.Thread(target=log_output, args=(proc.stderr, script["name"]), daemon=True).start()
-            append_log(f"[system] Lanzado {script['name']} en puerto {script['port']}")
-        except Exception as e:
-            append_log(f"[error] No se pudo lanzar {script['name']}: {e}")
-
-# --- Login ---
+# ======================== LOGIN Y ARRANQUE ========================
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "cambia_esto_en_produccion")
 
 @ui.page("/login")
@@ -2085,25 +2345,20 @@ def protected_page() -> None:
         return
     build_dashboard()
 
-# ... (todo el código anterior, incluyendo build_dashboard, login_page, etc.)
-
-# --- Configuración de sesión y lanzamiento ---
-from nicegui import app  # Importante: debe estar después de build_dashboard
-
-# Función para inicializar sesión de usuario al conectar
+# Inicializar sesión
 def init_user_session():
     if 'authenticated' not in app.storage.user:
         app.storage.user.update({'authenticated': False})
 
 app.on_connect(init_user_session)
 
-# Obtener puerto desde variable de entorno de Render (por defecto 8083)
+# Obtener puerto desde variable de entorno de Render
 port = int(os.environ.get('PORT', 8083))
 
 ui.run(
     title="STRATUM",
     favicon="◉",
-    host="0.0.0.0",          # Necesario para Render
+    host="0.0.0.0",
     port=port,
     storage_secret=os.environ.get("STORAGE_SECRET", "default_secret_change_in_production"),
     reload=False
