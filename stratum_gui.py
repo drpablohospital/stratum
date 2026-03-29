@@ -2316,9 +2316,558 @@ def build_dashboard() -> None:
     refresh_live_chart(force=True)
     write_ambient_state()
 
+def render_dogma_landing() -> None:
+    add_styles()
+
+    ui.add_head_html("""
+    <style>
+        .landing-shell {
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        .landing-shell::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background:
+                radial-gradient(circle at 12% 14%, rgba(168,221,229,.42), transparent 20%),
+                radial-gradient(circle at 86% 18%, rgba(233,138,107,.20), transparent 22%),
+                radial-gradient(circle at 72% 82%, rgba(217,221,242,.34), transparent 20%),
+                radial-gradient(circle at 35% 88%, rgba(231,199,214,.22), transparent 22%);
+            z-index: 0;
+        }
+
+        .landing-wrap {
+            position: relative;
+            z-index: 1;
+            max-width: 1480px;
+            margin: 0 auto;
+            padding: 24px 18px 40px;
+        }
+
+        .landing-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 16px 0 20px;
+        }
+
+        .dogma-mark {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .dogma-name {
+            font-size: 30px;
+            line-height: 1;
+            font-weight: 900;
+            letter-spacing: .22em;
+            color: #15324b;
+        }
+
+        .dogma-sub {
+            font-size: 10px;
+            letter-spacing: .36em;
+            text-transform: uppercase;
+            color: #6a7682;
+        }
+
+        .landing-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .landing-hero {
+            display: grid;
+            grid-template-columns: 1.05fr .95fr;
+            gap: 18px;
+            align-items: stretch;
+            margin-top: 10px;
+        }
+
+        .landing-card {
+            border-radius: 28px;
+            border: 1px solid rgba(200,191,175,.56);
+            background: linear-gradient(180deg, rgba(255,255,255,.82), rgba(251,248,242,.92));
+            box-shadow: 0 18px 40px rgba(35,68,107,.08);
+            backdrop-filter: blur(12px);
+        }
+
+        .landing-copy {
+            padding: 34px 30px 30px;
+        }
+
+        .landing-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(255,255,255,.72);
+            border: 1px solid rgba(216,209,197,.82);
+            color: #33526e;
+            font-size: 12px;
+            font-weight: 700;
+            box-shadow: 0 8px 20px rgba(35,68,107,.05);
+        }
+
+        .landing-kicker::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: #2373B8;
+            box-shadow: 0 0 12px rgba(35,115,184,.45);
+        }
+
+        .landing-title {
+            margin-top: 18px;
+            font-size: 68px;
+            line-height: .92;
+            letter-spacing: -.055em;
+            font-weight: 900;
+            color: #143148;
+            max-width: 820px;
+        }
+
+        .landing-title .gradient {
+            display: block;
+            background: linear-gradient(90deg, #2373B8 0%, #6ECBE8 42%, #E98A6B 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .landing-body {
+            margin-top: 20px;
+            max-width: 760px;
+            font-size: 18px;
+            line-height: 1.7;
+            color: #4b5c6a;
+        }
+
+        .landing-cta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 24px;
+        }
+
+        .landing-terminal {
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 100%;
+        }
+
+        .landing-terminal-shell {
+            background: linear-gradient(180deg, rgba(15,23,32,.98), rgba(22,35,49,.98));
+            border-radius: 24px;
+            overflow: hidden;
+            border: 1px solid rgba(110,203,232,.18);
+            box-shadow: 0 18px 50px rgba(11,25,38,.24);
+        }
+
+        .landing-terminal-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(255,255,255,.08);
+            background: rgba(255,255,255,.03);
+        }
+
+        .landing-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            display: inline-block;
+        }
+
+        .landing-dot.coral { background: #E98A6B; }
+        .landing-dot.peach { background: #EDB08A; }
+        .landing-dot.cyan  { background: #6ECBE8; }
+
+        .landing-terminal-title {
+            margin-left: 8px;
+            color: #8FB3C1;
+            font-family: 'Fira Code', Consolas, monospace;
+            font-size: 12px;
+            letter-spacing: .16em;
+        }
+
+        .landing-terminal-body {
+            padding: 18px 18px 20px;
+            color: #DFF6FF;
+            font-family: 'Fira Code', Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.7;
+        }
+
+        .landing-progress {
+            margin-top: 16px;
+            height: 8px;
+            border-radius: 999px;
+            background: rgba(255,255,255,.08);
+            overflow: hidden;
+        }
+
+        .landing-progress span {
+            display: block;
+            width: 46%;
+            height: 100%;
+            background: linear-gradient(90deg, rgba(110,203,232,.12), #6ECBE8, #E98A6B);
+            animation: terminal-flow 2.6s linear infinite;
+        }
+
+        .landing-bars {
+            display: grid;
+            grid-template-columns: repeat(12, minmax(0, 1fr));
+            gap: 6px;
+            align-items: end;
+            height: 118px;
+            margin-top: 20px;
+        }
+
+        .landing-bars span {
+            border-radius: 999px 999px 0 0;
+            background: linear-gradient(180deg, rgba(204,238,245,.88), rgba(35,115,184,.92), rgba(233,138,107,.88));
+            opacity: .92;
+        }
+
+        .landing-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-top: 18px;
+        }
+
+        .landing-info-card {
+            padding: 22px 22px 20px;
+        }
+
+        .landing-section-kicker {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .28em;
+            color: #6e7b87;
+            font-weight: 700;
+        }
+
+        .landing-section-title {
+            margin-top: 10px;
+            font-size: 34px;
+            line-height: 1.02;
+            letter-spacing: -.04em;
+            font-weight: 800;
+            color: #143148;
+        }
+
+        .landing-paragraph {
+            margin-top: 16px;
+            font-size: 15px;
+            line-height: 1.75;
+            color: #556574;
+        }
+
+        .landing-list {
+            display: grid;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        .landing-list-item {
+            border-radius: 18px;
+            background: rgba(255,255,255,.70);
+            border: 1px solid rgba(255,255,255,.94);
+            padding: 14px 14px 12px;
+        }
+
+        .landing-list-title {
+            color: #17314a;
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .landing-list-text {
+            margin-top: 4px;
+            color: #607181;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .landing-dark-band {
+            margin-top: 18px;
+            border-radius: 28px;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 80% 24%, rgba(233,138,107,.24), transparent 20%),
+                radial-gradient(circle at 24% 18%, rgba(35,115,184,.36), transparent 24%),
+                linear-gradient(180deg, #13202d 0%, #0f1b27 100%);
+            border: 1px solid rgba(200,191,175,.16);
+            box-shadow: 0 18px 46px rgba(35,68,107,.12);
+        }
+
+        .landing-dark-grid {
+            display: grid;
+            grid-template-columns: 1fr .9fr;
+        }
+
+        .landing-dark-copy {
+            padding: 32px 28px;
+            color: #E6F6FF;
+        }
+
+        .landing-dark-title {
+            margin-top: 12px;
+            font-size: 38px;
+            line-height: 1.02;
+            letter-spacing: -.04em;
+            font-weight: 800;
+        }
+
+        .landing-dark-body {
+            margin-top: 18px;
+            color: #b8d4e2;
+            font-size: 15px;
+            line-height: 1.75;
+            max-width: 760px;
+        }
+
+        .landing-dark-right {
+            padding: 28px;
+            display: flex;
+            align-items: center;
+        }
+
+        .landing-core-box {
+            width: 100%;
+            border-radius: 24px;
+            border: 1px solid rgba(255,255,255,.10);
+            background: rgba(255,255,255,.05);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+        }
+
+        .landing-core-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 12px;
+            color: #E6F6FF;
+            font-size: 14px;
+        }
+
+        .landing-core-index {
+            width: 38px;
+            height: 38px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,.08);
+            border: 1px solid rgba(255,255,255,.10);
+            color: #6ECBE8;
+            font-weight: 800;
+        }
+
+        .landing-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            padding: 26px 2px 6px;
+            color: #5f7080;
+            font-size: 14px;
+        }
+
+        .landing-footer strong {
+            color: #17314a;
+        }
+
+        @media (max-width: 1100px) {
+            .landing-hero,
+            .landing-grid,
+            .landing-dark-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .landing-title {
+                font-size: 50px;
+            }
+
+            .landing-nav {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+
+        @media (max-width: 720px) {
+            .landing-title {
+                font-size: 40px;
+            }
+
+            .landing-body {
+                font-size: 16px;
+            }
+
+            .landing-wrap {
+                padding: 16px 12px 28px;
+            }
+        }
+    </style>
+    """)
+
+    with ui.column().classes('landing-shell w-full'):
+        with ui.column().classes('landing-wrap w-full'):
+            with ui.row().classes('landing-nav w-full'):
+                with ui.column().classes('dogma-mark'):
+                    ui.label('DOGMA').classes('dogma-name')
+                    ui.label('digital finance tools · crypto infrastructure · portfolio intelligence').classes('dogma-sub')
+
+                with ui.row().classes('landing-actions'):
+                    ui.button('Más información', on_click=lambda: ui.run_javascript("document.getElementById('about-section')?.scrollIntoView({behavior:'smooth'})")).classes('btn-soft')
+                    ui.button('Disclaimer', on_click=lambda: ui.run_javascript("document.getElementById('disclaimer-section')?.scrollIntoView({behavior:'smooth'})")).classes('btn-soft')
+                    ui.button('Login / plataforma', on_click=lambda: ui.navigate.to('/login')).classes('btn-primary')
+
+            with ui.element('div').classes('landing-hero w-full'):
+                with ui.element('div').classes('landing-card landing-copy'):
+                    ui.label('Finetech indie para infraestructura, estrategia y operación digital').classes('landing-kicker')
+                    ui.html("""
+                        <div class="landing-title">
+                            Herramientas para
+                            <span class="gradient">finanzas digitales</span>
+                            y sistemas de decisión.
+                        </div>
+                    """)
+                    ui.label(
+                        'DOGMA desarrolla superficies de análisis, operación, visualización de portafolios y herramientas para activos digitales con una estética limpia, inmersiva y orientada a decisión.'
+                    ).classes('landing-body')
+
+                    with ui.row().classes('landing-cta-row'):
+                        ui.button('Entrar a DOGMA Tools', on_click=lambda: ui.navigate.to('/login')).classes('btn-warm')
+                        ui.button('Quiénes somos', on_click=lambda: ui.run_javascript("document.getElementById('about-section')?.scrollIntoView({behavior:'smooth'})")).classes('btn-soft')
+                        ui.button('Avisos y alcance', on_click=lambda: ui.run_javascript("document.getElementById('disclaimer-section')?.scrollIntoView({behavior:'smooth'})")).classes('btn-soft')
+
+                with ui.element('div').classes('landing-card landing-terminal'):
+                    ui.html("""
+                        <div class="landing-terminal-shell">
+                            <div class="landing-terminal-head">
+                                <span class="landing-dot coral"></span>
+                                <span class="landing-dot peach"></span>
+                                <span class="landing-dot cyan"></span>
+                                <span class="landing-terminal-title">DOGMA TERMINAL</span>
+                            </div>
+                            <div class="landing-terminal-body">
+                                <div>[live] digital finance surface online</div>
+                                <div>[tools] portfolio intelligence ready</div>
+                                <div>[signals] systematic research layer initialized</div>
+                                <div>[status] awaiting operator intent...</div>
+                                <div class="landing-progress"><span></span></div>
+                                <div class="landing-bars">
+                                    <span style="height:38%"></span>
+                                    <span style="height:54%"></span>
+                                    <span style="height:48%"></span>
+                                    <span style="height:62%"></span>
+                                    <span style="height:46%"></span>
+                                    <span style="height:69%"></span>
+                                    <span style="height:73%"></span>
+                                    <span style="height:66%"></span>
+                                    <span style="height:59%"></span>
+                                    <span style="height:76%"></span>
+                                    <span style="height:68%"></span>
+                                    <span style="height:71%"></span>
+                                </div>
+                            </div>
+                        </div>
+                    """)
+
+            with ui.element('div').classes('landing-grid w-full'):
+                with ui.element('div').props('id=about-section').classes('landing-card landing-info-card'):
+                    ui.label('Quiénes somos').classes('landing-section-kicker')
+                    ui.label('DOGMA es una firma independiente orientada a tecnología financiera y activos digitales.').classes('landing-section-title')
+                    ui.label(
+                        'Construimos herramientas para análisis, operación, visualización de portafolios y superficies de decisión para usuarios y equipos que necesitan navegar mercados digitales con más claridad, control y diseño.'
+                    ).classes('landing-paragraph')
+                    ui.label(
+                        'Nuestro enfoque combina software, investigación, automatización, interfaces especializadas y una visión modular para productos de crypto, administración de fondos y ecosistemas de finanzas digitales.'
+                    ).classes('landing-paragraph')
+
+                with ui.element('div').classes('landing-card landing-info-card'):
+                    ui.label('Qué hacemos').classes('landing-section-kicker')
+                    with ui.element('div').classes('landing-list'):
+                        items = [
+                            ('DOGMA Tools', 'Plataforma de herramientas para investigación, operación y superficies de análisis.'),
+                            ('Crypto & digital finance', 'Capas de trabajo orientadas a activos digitales, infraestructura cuantitativa y flujos de mercado.'),
+                            ('Portafolios y manejo de fondos', 'Interfaces y sistemas de apoyo para monitoreo, análisis y organización de estrategias.'),
+                            ('Arquitectura modular', 'Landing, login, productos, dashboards y capas de riesgo diseñadas para crecer por etapas.'),
+                        ]
+                        for title, text in items:
+                            with ui.element('div').classes('landing-list-item'):
+                                ui.label(title).classes('landing-list-title')
+                                ui.label(text).classes('landing-list-text')
+
+            with ui.element('div').classes('landing-dark-band w-full'):
+                with ui.element('div').classes('landing-dark-grid'):
+                    with ui.element('div').classes('landing-dark-copy'):
+                        ui.label('Surface').classes('landing-section-kicker')
+                        ui.label('Una capa de acceso para herramientas cuantitativas, operación y exploración financiera.').classes('landing-dark-title')
+                        ui.label(
+                            'El landing está pensado como umbral de entrada: identidad, claridad institucional básica, acceso a la plataforma y futuras rutas para productos, onboarding y documentación.'
+                        ).classes('landing-dark-body')
+                        with ui.row().classes('landing-cta-row'):
+                            ui.button('Continuar a la plataforma', on_click=lambda: ui.navigate.to('/login')).classes('btn-soft')
+                            ui.button('Ver disclaimer', on_click=lambda: ui.run_javascript("document.getElementById('disclaimer-section')?.scrollIntoView({behavior:'smooth'})")).classes('btn-soft')
+
+                    with ui.element('div').classes('landing-dark-right'):
+                        with ui.element('div').classes('landing-core-box'):
+                            ui.label('Core vectors').classes('landing-section-kicker')
+                            core = [
+                                'Research interfaces',
+                                'Systematic execution surfaces',
+                                'Digital finance tooling',
+                                'Portfolio visualization layers',
+                                'Crypto-native product architecture',
+                            ]
+                            for i, item in enumerate(core, start=1):
+                                with ui.element('div').classes('landing-core-item'):
+                                    ui.label(str(i)).classes('landing-core-index')
+                                    ui.label(item)
+
+            with ui.element('div').props('id=disclaimer-section').classes('landing-card landing-info-card w-full mt-4'):
+                ui.label('Disclaimer').classes('landing-section-kicker')
+                ui.label('Información general, acceso a herramientas y contexto institucional.').classes('landing-section-title')
+                ui.label(
+                    'El contenido del sitio es de carácter informativo y de acceso a herramientas. No constituye una invitación pública general a invertir ni sustituye asesoría legal, fiscal, contable o financiera personalizada.'
+                ).classes('landing-paragraph')
+                ui.label(
+                    'Cualquier uso de herramientas, interfaces, señales, simulaciones, análisis o visualizaciones debe entenderse dentro del marco de evaluación propia del usuario y de su perfil de riesgo.'
+                ).classes('landing-paragraph')
+                ui.label(
+                    'Algunas funciones del ecosistema DOGMA pueden evolucionar por etapas: acceso, login, módulos internos, documentación ampliada, rutas de onboarding y productos complementarios.'
+                ).classes('landing-paragraph')
+
+            with ui.row().classes('landing-footer w-full'):
+                ui.label('Fintech independiente para herramientas de finanzas digitales, crypto y capas de portafolio.')
+                with ui.row().classes('landing-actions'):
+                    ui.button('Ir al login', on_click=lambda: ui.navigate.to('/login')).classes('btn-soft')
+                    ui.button('Ir a la plataforma', on_click=lambda: ui.navigate.to('/login')).classes('btn-primary')
 
 # ======================== LOGIN Y ARRANQUE ========================
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "cambia_esto_en_produccion")
+
+@ui.page("/")
+def landing_page() -> None:
+    """Landing público de DOGMA."""
+    render_dogma_landing()
 
 @ui.page("/login")
 def login_page() -> None:
@@ -2326,18 +2875,21 @@ def login_page() -> None:
     def try_login():
         if username.value == "admin" and password.value == ADMIN_PASSWORD:
             app.storage.user.update({'authenticated': True, 'username': username.value})
-            ui.navigate.to('/')
+            ui.navigate.to('/platform')
         else:
             ui.notify('Credenciales incorrectas', type='negative')
 
-    ui.page_title("STRATUM - Login")
-    with ui.card().classes('absolute-center'):
-        ui.label('🔐 STRATUM').classes('text-h4 text-center')
+    ui.page_title("DOGMA / STRATUM - Login")
+    with ui.card().classes('absolute-center panel-card').style('min-width: 340px'):
+        ui.label('DOGMA / STRATUM').classes('text-h5 text-center')
+        ui.label('Acceso a la plataforma').classes('section-help text-center')
         username = ui.input('Usuario', value='admin').props('outlined')
         password = ui.input('Contraseña', password=True, password_toggle_button=True).props('outlined')
-        ui.button('Ingresar', on_click=try_login).props('outline').classes('w-full')
+        with ui.row().classes('w-full gap-2'):
+            ui.button('Ingresar', on_click=try_login).classes('btn-primary w-full')
+        ui.button('Volver al landing', on_click=lambda: ui.navigate.to('/')).classes('btn-soft w-full mt-2')
 
-@ui.page("/")
+@ui.page("/platform")
 def protected_page() -> None:
     """Página principal protegida por autenticación."""
     if not app.storage.user.get('authenticated', False):
@@ -2356,7 +2908,7 @@ app.on_connect(init_user_session)
 port = int(os.environ.get('PORT', 8083))
 
 ui.run(
-    title="STRATUM",
+    title="DOGMA / STRATUM",
     favicon="◉",
     host="0.0.0.0",
     port=port,
