@@ -716,7 +716,7 @@ def fetch_binance_klines(symbol: str = "BTCUSDT", interval: str = "15m", limit: 
     target_url = f"https://api.binance.com/api/v3/klines?{params}"
 
     # 2. URL de tu proxy (cambia si es necesario)
-    PROXY_URL = "https://stratum-proxy.onrender.com"
+    PROXY_URL = "https://reliable-proxy-d9ew.onrender.com"
 
     # 3. Construir la URL del proxy con el target codificado
     proxy_request_url = f"{PROXY_URL}/?target={quote_plus(target_url)}"
@@ -1973,7 +1973,7 @@ def idle_page() -> None:
         params = urlencode({'symbol': symbol, 'interval': interval, 'limit': limit})
         target_url = f'https://api.binance.com/api/v3/klines?{params}'
 
-        PROXY_URL = "https://stratum-proxy.onrender.com"
+        PROXY_URL = "https://reliable-proxy-d9ew.onrender.com"
         proxy_request_url = f"{PROXY_URL}/?target={quote_plus(target_url)}"
 
         req = Request(proxy_request_url, headers={'User-Agent': 'Mozilla/5.0 STRATUM/1.0'})
