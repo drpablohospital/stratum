@@ -1,0 +1,9 @@
+1. Instala python
+2. Instana un venv en este folder y ejecutalo
+venv\Scripts\activate
+3. Instala dependencias:
+pip install -r requirements.txt
+pip install pyqt5 matplotlib pandas numpy requests
+PyQt5, PySide2
+4. Corre GUI
+python argentum_gui.py
