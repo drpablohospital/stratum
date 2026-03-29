@@ -21,7 +21,7 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from nicegui import ui
+from nicegui import ui, app
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIGS_DIR = BASE_DIR / "configs"
