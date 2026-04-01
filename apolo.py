@@ -130,6 +130,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "trail_start_R": 1.5,
         "trail_atr_mult": 1.0,
     },
+
+    # Hybrid mode parameters
+    "hybrid": {
+        "ml_weight": 0.6,
+        "long_threshold": 0.58,
+        "short_threshold": 0.58,
+        "use_ml_model": True,
+        "ml_model_path": "btc_ml_model.pkl",
+    },
 }
 
 SEARCH_SPACE_FEATURE = {
@@ -192,6 +201,41 @@ SEARCH_SPACE_LEGACY = {
     ("risk_engine", "risk_per_trade_pct"): (0.10, 1.00, "float"),
     ("risk_engine", "max_hold_minutes"): (30, 720, "int"),
     ("risk_engine", "cooldown_minutes"): (5, 360, "int"),
+}
+
+# New search space for hybrid mode (combines heuristic and ML)
+SEARCH_SPACE_HYBRID = {
+    ("tf_signal",): ["5m", "15m", "30m", "1h"],
+    ("tf_confirm",): ["1m", "3m", "5m", "15m"],
+    ("tf_entry",): ["1m", "3m", "5m", "15m"],
+    ("tf_trend",): ["15m", "1h", "4h"],
+    ("live_chart_tf",): ["5m", "15m", "1h"],
+    ("use_1h_trend_filter",): [True, False],
+
+    ("hybrid", "ml_weight"): (0.0, 1.0, "float"),
+    ("hybrid", "long_threshold"): (0.53, 0.72, "float"),
+    ("hybrid", "short_threshold"): (0.53, 0.72, "float"),
+    ("hybrid", "use_ml_model"): [True],  # always true for this mode, but keep for consistency
+
+    # Heuristic features (feature_prob) - we also optimize them for hybrid
+    ("feature_prob", "ret_1_weight"): (0.02, 0.25, "float"),
+    ("feature_prob", "ret_3_weight"): (0.04, 0.30, "float"),
+    ("feature_prob", "ret_12_weight"): (0.04, 0.35, "float"),
+    ("feature_prob", "range_pos_weight"): (0.02, 0.25, "float"),
+    ("feature_prob", "vol_ratio_weight"): (0.02, 0.25, "float"),
+    ("feature_prob", "realized_vol_weight"): (0.02, 0.25, "float"),
+    ("feature_prob", "slope_weight"): (0.02, 0.30, "float"),
+    ("feature_prob", "trend_weight"): (0.04, 0.35, "float"),
+    ("feature_prob", "breakout_weight"): (0.02, 0.25, "float"),
+
+    ("risk_engine", "sl_vol_mult"): (0.8, 2.5, "float"),
+    ("risk_engine", "tp_vol_mult"): (1.4, 5.5, "float"),
+    ("risk_engine", "breakeven_R"): (0.8, 2.5, "float"),
+    ("risk_engine", "trail_start_R"): (1.0, 4.0, "float"),
+    ("risk_engine", "trail_vol_mult"): (0.5, 2.5, "float"),
+    ("risk_engine", "risk_per_trade_pct"): (0.10, 1.00, "float"),
+    ("risk_engine", "max_hold_minutes"): (60, 720, "int"),
+    ("risk_engine", "cooldown_minutes"): (15, 360, "int"),
 }
 
 TIMEFRAME_ORDER = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240}
@@ -367,6 +411,7 @@ def warmup_datasets():
 def sanitize_config(cfg: dict[str, Any]) -> dict[str, Any]:
     c = copy.deepcopy(cfg)
 
+    # Sanitize feature_prob thresholds
     fp = c.get("feature_prob", {})
     if "long_threshold" in fp:
         fp["long_threshold"] = float(np.clip(fp["long_threshold"], 0.50, 0.90))
@@ -374,6 +419,15 @@ def sanitize_config(cfg: dict[str, Any]) -> dict[str, Any]:
         fp["short_threshold"] = float(np.clip(fp["short_threshold"], 0.50, 0.90))
     if "persistence_bars" in fp:
         fp["persistence_bars"] = int(np.clip(int(round(fp["persistence_bars"])), 1, 6))
+
+    # Sanitize hybrid thresholds
+    hy = c.get("hybrid", {})
+    if "long_threshold" in hy:
+        hy["long_threshold"] = float(np.clip(hy["long_threshold"], 0.50, 0.90))
+    if "short_threshold" in hy:
+        hy["short_threshold"] = float(np.clip(hy["short_threshold"], 0.50, 0.90))
+    if "ml_weight" in hy:
+        hy["ml_weight"] = float(np.clip(hy["ml_weight"], 0.0, 1.0))
 
     sig = c.get("tf_signal", "15m")
     confirm = c.get("tf_confirm", "5m")
@@ -417,13 +471,35 @@ def random_value(spec):
 
 def random_candidate(mode: str | None = None) -> dict[str, Any]:
     cfg = copy.deepcopy(DEFAULT_CONFIG)
-    chosen_mode = mode or random.choice(["feature_prob", "legacy_classic"])
+    if mode is None:
+        # 30% hybrid, 35% feature_prob, 35% legacy
+        r = random.random()
+        if r < 0.3:
+            chosen_mode = "hybrid"
+        elif r < 0.65:
+            chosen_mode = "feature_prob"
+        else:
+            chosen_mode = "legacy_classic"
+    else:
+        chosen_mode = mode
     cfg["mode"] = chosen_mode
     cfg["signal_engine"] = chosen_mode
 
-    search_space = SEARCH_SPACE_FEATURE if chosen_mode == "feature_prob" else SEARCH_SPACE_LEGACY
+    if chosen_mode == "hybrid":
+        search_space = SEARCH_SPACE_HYBRID
+    elif chosen_mode == "feature_prob":
+        search_space = SEARCH_SPACE_FEATURE
+    else:
+        search_space = SEARCH_SPACE_LEGACY
+
     for path, spec in search_space.items():
         set_path_value(cfg, path, random_value(spec))
+
+    # Ensure hybrid mode has ML model path
+    if chosen_mode == "hybrid":
+        cfg["hybrid"]["ml_model_path"] = str(BASE_DIR / "btc_ml_model.pkl")
+        cfg["hybrid"]["use_ml_model"] = True
+
     return sanitize_config(cfg)
 
 
@@ -448,16 +524,32 @@ def mutate_candidate(cfg: dict[str, Any], strength: float = 0.20, flip_mode_prob
     c = copy.deepcopy(cfg)
 
     if random.random() < flip_mode_prob:
-        c["mode"] = "legacy_classic" if c.get("mode") == "feature_prob" else "feature_prob"
-        c["signal_engine"] = c["mode"]
+        # Flip mode between the three
+        modes = ["feature_prob", "legacy_classic", "hybrid"]
+        current = c.get("mode")
+        new_mode = random.choice([m for m in modes if m != current])
+        c["mode"] = new_mode
+        c["signal_engine"] = new_mode
 
     mode = c.get("mode", "feature_prob")
-    search_space = SEARCH_SPACE_FEATURE if mode == "feature_prob" else SEARCH_SPACE_LEGACY
+    if mode == "hybrid":
+        search_space = SEARCH_SPACE_HYBRID
+    elif mode == "feature_prob":
+        search_space = SEARCH_SPACE_FEATURE
+    else:
+        search_space = SEARCH_SPACE_LEGACY
 
     for path, spec in search_space.items():
         if random.random() < 0.65:
             current = get_path_value(c, path)
             set_path_value(c, path, mutate_value(current, spec, strength))
+
+    # Ensure hybrid mode has ML model path
+    if c.get("mode") == "hybrid":
+        if "hybrid" not in c:
+            c["hybrid"] = {}
+        c["hybrid"]["ml_model_path"] = str(BASE_DIR / "btc_ml_model.pkl")
+        c["hybrid"]["use_ml_model"] = True
 
     return sanitize_config(c)
 
@@ -513,6 +605,11 @@ SURROGATE_FEATURES = [
     ("legacy", "breakeven_R"),
     ("legacy", "trail_start_R"),
     ("legacy", "trail_atr_mult"),
+
+    # Hybrid features
+    ("hybrid", "ml_weight"),
+    ("hybrid", "long_threshold"),
+    ("hybrid", "short_threshold"),
 ]
 
 
@@ -525,7 +622,13 @@ def candidate_to_vector(cfg: dict[str, Any]) -> list[float]:
     for path in SURROGATE_FEATURES:
         v = get_path_value(cfg, path)
         if path == ("mode",):
-            vec.append(1.0 if v == "feature_prob" else 0.0)
+            # Encode mode: 0=feature_prob, 1=legacy, 2=hybrid
+            if v == "feature_prob":
+                vec.append(0.0)
+            elif v == "legacy_classic":
+                vec.append(1.0)
+            else:
+                vec.append(2.0)
         elif isinstance(v, bool):
             vec.append(1.0 if v else 0.0)
         elif isinstance(v, str):
@@ -572,8 +675,9 @@ def compute_score(trades_df: pd.DataFrame, stats: dict[str, Any], cfg: dict) -> 
         - overtrade_penalty
     )
 
-    if cfg.get("mode") == "feature_prob":
-        score += 0.75
+    # Small bonus for using ML model
+    if cfg.get("mode") == "hybrid":
+        score += 0.5
 
     return float(score)
 
@@ -583,6 +687,9 @@ def compute_score(trades_df: pd.DataFrame, stats: dict[str, Any], cfg: dict) -> 
 # =========================================================
 def evaluate_candidate(candidate_cfg: dict[str, Any]) -> dict[str, Any] | None:
     cfg = build_runtime_config(candidate_cfg)
+    # Ensure the model path is set for hybrid mode
+    if cfg.get("mode") == "hybrid":
+        cfg["ml_model_path"] = candidate_cfg.get("hybrid", {}).get("ml_model_path", str(BASE_DIR / "btc_ml_model.pkl"))
     try:
         trades_df, stats = run_backtest(cfg)
         if trades_df is None or trades_df.empty:

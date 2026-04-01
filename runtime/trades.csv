@@ -1,2 +1,6 @@
 timestamp,symbol,mode,side,price,size,env
 2026-03-29 11:30:57 UTC,BTC/USDT:USDT,feature_prob,buy,66819.0,0.001,LIVE
+2026-03-30 04:36:04 UTC,BTC/USDT:USDT,feature_prob,buy,67393.4,0.001,LIVE
+2026-03-30 07:36:07 UTC,BTC/USDT:USDT,feature_prob,buy,67356.3,0.001,LIVE
+2026-03-31 02:35:11 UTC,BTC/USDT:USDT,feature_prob,buy,67919.1,0.001,LIVE
+2026-03-31 22:05:30 UTC,BTC/USDT:USDT,feature_prob,buy,68200.0,0.001,LIVE

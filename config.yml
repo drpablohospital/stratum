@@ -1,0 +1,7 @@
+tunnel: dogma-app
+credentials-file: C:\Users\xiute\.cloudflared\363b099a-ae2e-48da-a3e5-5c685095a61e.json
+
+ingress:
+  - hostname: dogma.tools
+    service: http://localhost:8083
+  - service: http_status:404

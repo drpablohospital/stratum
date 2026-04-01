@@ -2,22 +2,36 @@
 # Módulo de notificaciones para STRATUM Trading Bot
 # Envía mensajes a Telegram sobre señales, entradas, salidas y heartbeats
 
+import os
 import sys
+from datetime import datetime
+from pathlib import Path
+
+import requests
+from dotenv import load_dotenv
 
 try:
-    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
     pass
 
-print(f"[ORACLE] Token: {TELEGRAM_TOKEN[:5] if TELEGRAM_TOKEN else 'None'}...")
-print(f"[ORACLE] Chat ID: {TELEGRAM_CHAT_ID}")
+# Cargar .env desde la carpeta del proyecto
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+print(f"[ORACLE] Token: {TELEGRAM_TOKEN[:5] + '...' if TELEGRAM_TOKEN else 'None'}")
+print(f"[ORACLE] Chat ID: {TELEGRAM_CHAT_ID if TELEGRAM_CHAT_ID else 'None'}")
+
 
 # ============================================
 # FUNCIÓN PRINCIPAL DE ENVÍO
 # ============================================
 def send_telegram(message):
     """
-    Envía un mensaje a Telegram
+    Envía un mensaje a Telegram.
     Args:
         message (str): Mensaje a enviar (puede incluir HTML)
     Returns:
@@ -30,10 +44,10 @@ def send_telegram(message):
 
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID.strip(),  # Importante: sin espacios
+        "chat_id": str(TELEGRAM_CHAT_ID).strip(),
         "text": message,
         "parse_mode": "HTML",
-        "disable_web_page_preview": True
+        "disable_web_page_preview": True,
     }
 
     try:
@@ -67,24 +81,22 @@ def format_signal(side, trigger, sl, tp, atr, note=""):
 🎯 <b>Trigger:</b> ${trigger:,.2f}
 🛡️ <b>Stop Loss:</b> ${sl:,.2f}
 💰 <b>Take Profit:</b> ${tp:,.2f}
-📊 <b>ATR(15):</b> ${atr:,.2f}
+📊 <b>ATR:</b> ${atr:,.2f}
 
-<i>⏰ {datetime.now().strftime('%H:%M:%S')} UTC</i>
+<i>⏰ {datetime.utcnow().strftime('%H:%M:%S')} UTC</i>
 {('📝 ' + note) if note else ''}
-"""
+""".strip()
 
 
 def format_entry(side, price, qty, equity, trigger=None, sl_price=None):
     """
-    Formatea mensaje cuando se ABRE una posición
-    Incluye ejemplos con diferentes apalancamientos para $100
+    Formatea mensaje cuando se ABRE una posición.
+    Incluye ejemplos con diferentes apalancamientos para $100.
     """
     side_emoji = "🟢" if side == "LONG" else "🔴"
 
-    # Calcular riesgo para ejemplos
     risk_dist = abs(price - sl_price) / price if sl_price and sl_price > 0 else 0.02
 
-    # Ejemplos con $100 USD
     inv_base = 100
     examples = []
     for lev_ex in [5, 15, 30]:
@@ -93,8 +105,6 @@ def format_entry(side, price, qty, equity, trigger=None, sl_price=None):
         examples.append(f"{lev_ex}x → ${size:,.0f} (riesgo ${risk_usd:.2f})")
 
     examples_text = "\n      ".join(examples)
-
-    # Línea de trigger si aplica
     trigger_line = f"\n🎯 <b>Trigger:</b> ${trigger:,.2f}" if trigger else ""
 
     return f"""
@@ -108,8 +118,8 @@ def format_entry(side, price, qty, equity, trigger=None, sl_price=None):
 <b>📈 EJEMPLO CON $100 USD:</b>
       {examples_text}
 
-<i>⏰ {datetime.now().strftime('%H:%M:%S')} UTC</i>
-"""
+<i>⏰ {datetime.utcnow().strftime('%H:%M:%S')} UTC</i>
+""".strip()
 
 
 def format_close(side, entry, exit_px, pnl_pct, reason, equity_before=None):
@@ -119,17 +129,16 @@ def format_close(side, entry, exit_px, pnl_pct, reason, equity_before=None):
     emoji = "🟢" if pnl_pct > 0 else "🔴"
     sign = "+" if pnl_pct > 0 else ""
 
-    # Traducir razón a español amigable
     reason_translated = {
         "TP": "Take Profit 🎯",
         "SL": "Stop Loss 🛡️",
         "BE": "Breakeven ⚖️",
         "TRAIL": "Trailing Stop 📏",
         "TIME": "Tiempo máximo ⏱️",
-        "UNKNOWN": "Desconocido ❓"
+        "MANUAL": "Manual ✋",
+        "UNKNOWN": "Desconocido ❓",
     }.get(reason, reason)
 
-    # Calcular ejemplos con $100
     inv_base = 100
     examples = []
     for lev_ex in [5, 15, 30]:
@@ -138,8 +147,13 @@ def format_close(side, entry, exit_px, pnl_pct, reason, equity_before=None):
 
     examples_text = "\n      ".join(examples)
 
-    # Equity si se proporciona
-    equity_line = f"\n💰 <b>Equity final:</b> ${equity_before * (1 + pnl_pct/100):.2f}" if equity_before else ""
+    equity_line = ""
+    if equity_before is not None:
+        try:
+            equity_after = equity_before * (1 + pnl_pct / 100)
+            equity_line = f"\n💰 <b>Equity estimado:</b> ${equity_after:.2f}"
+        except Exception:
+            pass
 
     return f"""
 {emoji} <b>POSICIÓN CERRADA</b> {emoji}
@@ -153,47 +167,35 @@ def format_close(side, entry, exit_px, pnl_pct, reason, equity_before=None):
 <b>💰 IMPACTO EN $100 USD:</b>
       {examples_text}
 
-<i>⏰ {datetime.now().strftime('%H:%M:%S')} UTC</i>
-"""
+<i>⏰ {datetime.utcnow().strftime('%H:%M:%S')} UTC</i>
+""".strip()
 
 
 def format_heartbeat(btc_price, daily_change, atr_value, trend_15m, trend_1h,
-                    rsi_value, armed_status, cooldown_mins, loss_streak,
-                    equity, reason_no_trade=""):
+                     rsi_value, armed_status, cooldown_mins, loss_streak,
+                     equity, reason_no_trade=""):
     """
-    Formatea mensaje de heartbeat (cada 2 horas)
-    Explica por qué NO hay trade (educativo)
+    Formatea mensaje de heartbeat
     """
+    armed_text = "🔫 ARMAS ACTIVAS" if armed_status else "💤 ESPERANDO"
 
-    # Estado del armado
-    if armed_status:
-        armed_text = "🔫 ARMAS ACTIVAS"
-    else:
-        armed_text = "💤 ESPERANDO"
-
-    # Flechas de tendencia con emojis
     trend_15m_emoji = "🟢" if trend_15m == "LONG" else ("🔴" if trend_15m == "SHORT" else "⚪")
     trend_1h_emoji = "🟢" if trend_1h == "LONG" else ("🔴" if trend_1h == "SHORT" else "⚪")
 
     trend_15m_text = f"{trend_15m_emoji} {trend_15m}" if trend_15m != "NEUTRO" else "⚪ NEUTRO"
     trend_1h_text = f"{trend_1h_emoji} {trend_1h}" if trend_1h != "NEUTRO" else "⚪ NEUTRO"
 
-    # Cambio diario
     change_emoji = "🟢" if daily_change > 0 else ("🔴" if daily_change < 0 else "⚪")
-
-    # Cooldown
     cooldown_text = f"{cooldown_mins} min" if cooldown_mins > 0 else "0"
-
-    # Formatear precio
     price_str = f"${btc_price:,.2f}"
 
     return f"""
-<b>🕒 HEARTBEAT STRATUM</b> · <i>{datetime.now().strftime('%H:%M UTC')}</i>
+<b>🕒 HEARTBEAT STRATUM</b> · <i>{datetime.utcnow().strftime('%H:%M UTC')}</i>
 
 <b>📊 MERCADO</b>
 ━━━━━━━━━━━━━━━━━━
 {change_emoji} <b>BTC:</b> {price_str} ({daily_change:+.2f}% 24h)
-📏 <b>ATR(15):</b> ${atr_value:.2f}
+📏 <b>ATR:</b> ${atr_value:.2f}
 
 <b>📈 TENDENCIA</b>
 ━━━━━━━━━━━━━━━━━━
@@ -212,21 +214,21 @@ def format_heartbeat(btc_price, daily_change, atr_value, trend_15m, trend_1h,
 {reason_no_trade}
 
 <i>⏳ Próximo heartbeat en 2h</i>
-"""
+""".strip()
 
 
 def format_error(error_msg, context=""):
     """
-    Formatea mensaje de error (para alertas)
+    Formatea mensaje de error
     """
     return f"""
 🚨 <b>⚠️ ALERTA - ERROR</b> 🚨
 
 <b>Contexto:</b> {context}
-<b>Error:</b> {error_msg[:200]}
+<b>Error:</b> {str(error_msg)[:300]}
 
-<i>⏰ {datetime.now().strftime('%H:%M:%S')} UTC</i>
-"""
+<i>⏰ {datetime.utcnow().strftime('%H:%M:%S')} UTC</i>
+""".strip()
 
 
 def format_startup(config_summary):
@@ -241,8 +243,8 @@ def format_startup(config_summary):
 {config_summary}
 
 <i>✅ Monitoreando mercado 24/7</i>
-<i>⏰ {datetime.now().strftime('%H:%M:%S')} UTC</i>
-"""
+<i>⏰ {datetime.utcnow().strftime('%H:%M:%S')} UTC</i>
+""".strip()
 
 
 # ============================================
@@ -251,9 +253,14 @@ def format_startup(config_summary):
 def test_telegram():
     """
     Función para probar que Telegram funciona
-    Ejecutar: python -c "import oracle; oracle.test_telegram()"
+    Ejecutar:
+    python -c "import oracle; oracle.test_telegram()"
     """
     print("🔍 Probando conexión con Telegram...")
+
+    token_preview = "NO CONFIGURADO"
+    if TELEGRAM_TOKEN:
+        token_preview = f"{TELEGRAM_TOKEN[:10]}...{TELEGRAM_TOKEN[-5:]}"
 
     test_msg = f"""
 <b>🧪 MENSAJE DE PRUEBA</b>
@@ -261,11 +268,11 @@ def test_telegram():
 Si ves esto, Telegram está configurado correctamente ✅
 
 <b>Configuración actual:</b>
-• Token: {TELEGRAM_TOKEN[:10]}...{TELEGRAM_TOKEN[-5:] if TELEGRAM_TOKEN else 'NO CONFIGURADO'}
+• Token: {token_preview}
 • Chat ID: {TELEGRAM_CHAT_ID}
 
-<i>⏰ {datetime.now().strftime('%H:%M:%S')} UTC</i>
-"""
+<i>⏰ {datetime.utcnow().strftime('%H:%M:%S')} UTC</i>
+""".strip()
 
     success = send_telegram(test_msg)
     if success:
@@ -281,5 +288,4 @@ Si ves esto, Telegram está configurado correctamente ✅
 # ============================================
 if __name__ == "__main__":
     print("🔮 ORACLE - Módulo de notificaciones para STRATUM")
-    print("Este archivo no debe ejecutarse directamente.")
-    print("Para probar: from oracle import test_telegram; test_telegram()")
+    print("Para probar: python -c \"import oracle; oracle.test_telegram()\"")

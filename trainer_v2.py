@@ -1,6 +1,6 @@
 """
-sa_trainer.py - Entrenamiento multi‑timeframe para BTCUSDT con GPU
-Corregido para XGBoost >= 2.0 (usa device='cuda' en lugar de gpu_id)
+sa_trainer_enhanced.py - Entrenamiento multi‑timeframe para BTCUSDT con GPU
+Mejorado con datos externos y más timeframes
 """
 
 import os
@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from tqdm import tqdm
 
 import requests
+import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, classification_report
@@ -30,24 +31,47 @@ HORIZON_HOURS = 12              # horizonte de predicción en horas
 THRESHOLD_PCT = 0.75            # retorno mínimo para señal (%)
 PERSISTENCE_BARS = 2            # persistencia (no usado en entrenamiento)
 
-# Timeframes a utilizar
-TIMEFRAMES = ["1m", "15m", "30m", "1h", "1d", "1w"]
+# Timeframes a utilizar (incluimos 5m)
+TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "1d", "1w"]
 
-# Años de histórico
-YEARS = 10
+# Años de histórico (usaremos desde 2017, fecha más antigua de Binance)
+START_YEAR = 2017
 
-# Modelo: 'xgboost' (recomendado) o 'random_forest'
+# Modelo: 'xgboost' o 'random_forest'
 MODEL_TYPE = "xgboost"
 
-# Configuración de GPU para XGBoost (nuevos parámetros para versión >= 2.0)
+# Parámetros XGBoost con GPU (para versión >= 2.0)
 XGB_GPU_PARAMS = {
-    'tree_method': 'hist',       # 'hist' funciona con device='cuda'
-    'device': 'cuda',            # reemplaza a gpu_id
-    'n_jobs': 1,                 # evita conflictos de hilos
+    'tree_method': 'hist',
+    'device': 'cuda',
+    'n_jobs': 1,
+}
+
+# Parámetros adicionales para XGBoost
+XGB_PARAMS = {
+    'n_estimators': 500,
+    'max_depth': 8,
+    'learning_rate': 0.03,
+    'subsample': 0.8,
+    'colsample_bytree': 0.8,
+    'objective': 'multi:softprob',
+    'num_class': 3,
+    'random_state': 42,
+    'eval_metric': 'mlogloss',
+    'early_stopping_rounds': 50,
+}
+
+# Símbolos de Yahoo Finance para índices y activos relacionados
+EXTERNAL_SYMBOLS = {
+    'sp500': '^GSPC',
+    'nasdaq': '^IXIC',
+    'dow': '^DJI',
+    'vix': '^VIX',
+    'nvda': 'NVDA',
 }
 
 # ======================================================
-# FUNCIONES DE DESCARGA (no se usarán si ya existen los .parquet)
+# FUNCIONES DE DESCARGA (Binance)
 # ======================================================
 
 def fetch_binance_klines(symbol, interval, start_date, end_date, max_retries=3):
@@ -96,13 +120,13 @@ def fetch_binance_klines(symbol, interval, start_date, end_date, max_retries=3):
     return df
 
 def load_or_download_data(interval, start_date, end_date):
-    fname = f"btc_{interval}_{YEARS}y.parquet"
+    fname = f"btc_{interval}_{START_YEAR}_{end_date.year}y.parquet"
     if os.path.exists(fname):
         print(f"Cargando {fname}...")
         df = pd.read_parquet(fname)
         return df
     else:
-        print(f"Descargando {interval} ({YEARS} años)...")
+        print(f"Descargando {interval} ({start_date.date()} a {end_date.date()})...")
         df = fetch_binance_klines(SYMBOL, interval, start_date, end_date)
         if not df.empty:
             df.to_parquet(fname, compression='snappy')
@@ -110,16 +134,57 @@ def load_or_download_data(interval, start_date, end_date):
         return df
 
 # ======================================================
-# FEATURE ENGINEERING POR TIMEFRAME
+# DATOS EXTERNOS (Yahoo Finance)
+# ======================================================
+
+def fetch_external_data(start_date, end_date):
+    """Descarga datos de índices y activos relacionados desde Yahoo Finance."""
+    data_dict = {}
+    for name, ticker in EXTERNAL_SYMBOLS.items():
+        print(f"Descargando {name} ({ticker})...")
+        try:
+            df = yf.download(ticker, start=start_date, end=end_date, progress=False)
+            if not df.empty:
+                # Nos quedamos con close y volume (si existe)
+                cols = ['Close']
+                if 'Volume' in df.columns:
+                    cols.append('Volume')
+                df = df[cols]
+                df.columns = [f"{name}_close", f"{name}_volume"] if len(cols) > 1 else [f"{name}_close"]
+                data_dict[name] = df
+            else:
+                print(f"Advertencia: No se obtuvieron datos para {ticker}")
+        except Exception as e:
+            print(f"Error descargando {ticker}: {e}")
+    return data_dict
+
+def resample_external_to_base(external_data, base_freq):
+    """Resamplea datos externos al timeframe base."""
+    aligned = []
+    for name, df in external_data.items():
+        # Resamplear a base_freq, usando último valor conocido
+        df_resampled = df.resample(base_freq).last()
+        # Agregar prefijo
+        df_resampled = df_resampled.add_prefix(f"{name}_")
+        aligned.append(df_resampled)
+    if aligned:
+        return pd.concat(aligned, axis=1)
+    else:
+        return pd.DataFrame()
+
+# ======================================================
+# FEATURE ENGINEERING POR TIMEFRAME (mejorado)
 # ======================================================
 
 def compute_features_tf(df, tf_label):
     features = pd.DataFrame(index=df.index, dtype='float32')
 
+    # Retornos
     features['ret_1'] = df['close'].pct_change(1).astype('float32')
     features['ret_3'] = df['close'].pct_change(3).astype('float32')
     features['ret_12'] = df['close'].pct_change(12).astype('float32')
 
+    # ATR y volatilidad
     high_low = df['high'] - df['low']
     high_close = np.abs(df['high'] - df['close'].shift())
     low_close = np.abs(df['low'] - df['close'].shift())
@@ -128,36 +193,65 @@ def compute_features_tf(df, tf_label):
     features['realized_vol'] = (atr / df['close']).astype('float32')
     features['vol_ratio'] = (atr / atr.rolling(96).mean()).astype('float32')
 
+    # Rango normalizado
     features['range_pos'] = ((df['high'] - df['low']) / df['close']).astype('float32')
 
+    # Slope de la media móvil
     def slope_series(y):
         x = np.arange(len(y))
         return np.polyfit(x, y, 1)[0]
     features['slope'] = df['close'].rolling(20).apply(slope_series, raw=True).astype('float32')
     features['slope'] = features['slope'] / df['close'].shift(1)
 
+    # EMA y tendencia
     features['ema_fast'] = df['close'].ewm(span=20).mean().astype('float32')
     features['ema_slow'] = df['close'].ewm(span=50).mean().astype('float32')
     features['trend'] = ((features['ema_fast'] - features['ema_slow']) / df['close']).astype('float32')
 
+    # Donchian
     donchian_high = df['high'].rolling(96).max()
     donchian_low = df['low'].rolling(96).min()
     features['breakout'] = np.where(df['close'] > donchian_high.shift(1), 1,
                                     np.where(df['close'] < donchian_low.shift(1), -1, 0)).astype('int8')
+
+    # Nuevos indicadores (RCI, MACD, BB)
+    # RSI
+    delta = df['close'].diff()
+    gain = delta.clip(lower=0)
+    loss = (-delta).clip(lower=0)
+    avg_gain = gain.rolling(14).mean()
+    avg_loss = loss.rolling(14).mean()
+    rs = avg_gain / avg_loss
+    features['rsi'] = (100 - 100 / (1 + rs)).fillna(50).astype('float32')
+
+    # MACD
+    ema12 = df['close'].ewm(span=12).mean()
+    ema26 = df['close'].ewm(span=26).mean()
+    features['macd'] = (ema12 - ema26).astype('float32')
+    features['macd_signal'] = features['macd'].ewm(span=9).mean().astype('float32')
+    features['macd_hist'] = (features['macd'] - features['macd_signal']).astype('float32')
+
+    # Bandas de Bollinger
+    sma20 = df['close'].rolling(20).mean()
+    std20 = df['close'].rolling(20).std()
+    features['bb_upper'] = (sma20 + 2*std20).astype('float32')
+    features['bb_lower'] = (sma20 - 2*std20).astype('float32')
+    features['bb_width'] = ((features['bb_upper'] - features['bb_lower']) / sma20).astype('float32')
 
     features = features.add_prefix(f"{tf_label}_")
     features.dropna(inplace=True)
     return features
 
 # ======================================================
-# COMBINACIÓN DE CARACTERÍSTICAS
+# COMBINACIÓN DE CARACTERÍSTICAS (incluyendo externas)
 # ======================================================
 
 def resample_to_base(features, base_freq):
     return features.resample(base_freq).ffill()
 
-def combine_features(interval_data, base_freq):
+def combine_features(interval_data, base_freq, external_features):
     combined = None
+    # Características de timeframes
     for tf, df in interval_data.items():
         print(f"Calculando características para {tf}...")
         feats = compute_features_tf(df, tf)
@@ -167,7 +261,13 @@ def combine_features(interval_data, base_freq):
         if combined is None:
             combined = feats
         else:
-            combined = combined.join(feats, how='inner')
+            combined = combined.join(feats, how='outer')
+    # Añadir características externas
+    if external_features is not None and not external_features.empty:
+        if combined is None:
+            combined = external_features
+        else:
+            combined = combined.join(external_features, how='outer')
     return combined
 
 # ======================================================
@@ -185,7 +285,7 @@ def create_labels_base(df_base, horizon_hours, threshold_pct):
     return pd.Series(labels, index=df_base.index, name='label')
 
 # ======================================================
-# ENTRENAMIENTO
+# ENTRENAMIENTO (mejorado con validación y early stopping)
 # ======================================================
 
 def train_model(X_train, y_train, X_test, y_test, model_type='xgboost'):
@@ -195,39 +295,20 @@ def train_model(X_train, y_train, X_test, y_test, model_type='xgboost'):
 
     if model_type == 'xgboost':
         import xgboost as xgb
-        # Parámetros base
-        params = {
-            'n_estimators': 300,
-            'max_depth': 6,
-            'learning_rate': 0.05,
-            'subsample': 0.8,
-            'colsample_bytree': 0.8,
-            'objective': 'multi:softprob',
-            'num_class': 3,
-            'random_state': 42,
-            'eval_metric': 'mlogloss',
-            'verbosity': 1,
-        }
-        # Detectar si GPU está disponible y agregar parámetros adecuados
-        try:
-            # Verificar si CUDA está disponible en XGBoost
-            if xgb.__version__ >= '2.0.0':
-                # Nueva forma: device='cuda'
-                params.update(XGB_GPU_PARAMS)
-                print("Usando GPU con device='cuda'")
-            else:
-                # Versión antigua: usar gpu_hist y gpu_id
-                params.update({
-                    'tree_method': 'gpu_hist',
-                    'predictor': 'gpu_predictor',
-                    'gpu_id': 0,
-                    'n_jobs': 1,
-                })
-                print("Usando GPU con método antiguo (gpu_hist)")
-        except:
-            print("No se pudo configurar GPU, usando CPU")
-            params['tree_method'] = 'hist'
-            params.pop('device', None)
+        params = XGB_PARAMS.copy()
+        # Configurar GPU
+        if xgb.__version__ >= '2.0.0':
+            params.update(XGB_GPU_PARAMS)
+            print("Usando GPU con device='cuda'")
+        else:
+            # Versión antigua
+            params.update({
+                'tree_method': 'gpu_hist',
+                'predictor': 'gpu_predictor',
+                'gpu_id': 0,
+                'n_jobs': 1,
+            })
+            print("Usando GPU con método antiguo (gpu_hist)")
 
         model = xgb.XGBClassifier(**params)
 
@@ -240,7 +321,18 @@ def train_model(X_train, y_train, X_test, y_test, model_type='xgboost'):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    model.fit(X_train_scaled, y_train_mapped)
+    if model_type == 'xgboost':
+        # Usar early stopping con validación
+        eval_set = [(X_train_scaled, y_train_mapped), (X_test_scaled, y_test_mapped)]
+        model.fit(
+            X_train_scaled, y_train_mapped,
+            eval_set=eval_set,
+            early_stopping_rounds=50,
+            verbose=False
+        )
+        # El modelo ya tiene best_iteration
+    else:
+        model.fit(X_train_scaled, y_train_mapped)
 
     preds_mapped = model.predict(X_test_scaled)
     inv_map = {v: k for k, v in label_mapping.items()}
@@ -256,10 +348,11 @@ def train_model(X_train, y_train, X_test, y_test, model_type='xgboost'):
 # ======================================================
 
 def main():
-    print("=== Entrenamiento multi‑timeframe para BTCUSDT con GPU ===\n")
+    print("=== Entrenamiento multi‑timeframe para BTCUSDT con GPU (mejorado) ===\n")
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=YEARS*365)
+    start_date = datetime(START_YEAR, 1, 1)
 
+    # 1. Descargar datos de BTC
     interval_data = {}
     for tf in TIMEFRAMES:
         print(f"\n--- {tf} ---")
@@ -270,13 +363,21 @@ def main():
             print(f"Advertencia: No se obtuvieron datos para {tf}")
 
     if not interval_data:
-        print("No se descargaron datos. Abortando.")
+        print("No se descargaron datos de BTC. Abortando.")
         return
 
+    # 2. Descargar datos externos (índices)
+    print("\n--- Descargando datos externos ---")
+    external_raw = fetch_external_data(start_date, end_date)
+    external_features = resample_external_to_base(external_raw, BASE_TIMEFRAME)
+    print(f"Características externas: {external_features.shape if external_features is not None else 'None'}")
+
+    # 3. Combinar características
     print(f"\nCombinando características a frecuencia {BASE_TIMEFRAME}...")
-    features = combine_features(interval_data, BASE_TIMEFRAME)
+    features = combine_features(interval_data, BASE_TIMEFRAME, external_features)
     print(f"Características totales: {features.shape}")
 
+    # 4. Obtener datos base para etiquetas
     if BASE_TIMEFRAME not in interval_data:
         df_base = load_or_download_data(BASE_TIMEFRAME, start_date, end_date)
     else:
@@ -297,13 +398,16 @@ def main():
     print("Distribución de etiquetas:")
     print(labels.value_counts())
 
+    # 5. Dividir en train/test (80/20)
     split_idx = int(len(features) * 0.8)
     X_train, X_test = features.iloc[:split_idx], features.iloc[split_idx:]
     y_train, y_test = labels.iloc[:split_idx], labels.iloc[split_idx:]
 
+    # 6. Entrenar modelo
     print(f"\nEntrenando modelo {MODEL_TYPE}...")
     model, scaler, label_mapping = train_model(X_train, y_train, X_test, y_test, MODEL_TYPE)
 
+    # 7. Guardar artefactos
     with open('btc_ml_model.pkl', 'wb') as f:
         pickle.dump(model, f)
     with open('scaler.pkl', 'wb') as f:
@@ -313,7 +417,22 @@ def main():
     with open('feature_columns.json', 'w') as f:
         json.dump(list(features.columns), f)
 
-    print("\n✅ Modelo y artefactos guardados: btc_ml_model.pkl, scaler.pkl, label_mapping.json, feature_columns.json")
+    # Guardar también la configuración utilizada
+    config = {
+        'start_date': start_date.isoformat(),
+        'end_date': end_date.isoformat(),
+        'timeframes': TIMEFRAMES,
+        'base_timeframe': BASE_TIMEFRAME,
+        'horizon_hours': HORIZON_HOURS,
+        'threshold_pct': THRESHOLD_PCT,
+        'model_type': MODEL_TYPE,
+        'external_symbols': EXTERNAL_SYMBOLS,
+    }
+    with open('training_config.json', 'w') as f:
+        json.dump(config, f, indent=2)
+
+    print("\n✅ Modelo y artefactos guardados:")
+    print("   btc_ml_model.pkl, scaler.pkl, label_mapping.json, feature_columns.json, training_config.json")
     print("Ahora puedes usarlos en tu backtester (config.json con mode='ml_model')")
 
 if __name__ == "__main__":

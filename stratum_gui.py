@@ -37,6 +37,14 @@ AMBIENT_STATE_FILE = BASE_DIR / "ambient_state.json"
 LIVE_TERMINAL_FILE = BASE_DIR / "live_terminal.txt"
 
 BOT_SCRIPT = BASE_DIR / "stratum.py"
+TRAINER_SCRIPT = BASE_DIR / "sa_trainer.py"  # script de reentrenamiento
+
+# Rutas de artefactos ML
+ML_MODEL_FILE = BASE_DIR / "btc_ml_model.pkl"
+ML_SCALER_FILE = BASE_DIR / "scaler.pkl"
+ML_FEATURES_FILE = BASE_DIR / "feature_columns.json"
+ML_MAPPING_FILE = BASE_DIR / "label_mapping.json"
+ML_METADATA_FILE = BASE_DIR / "ml_metadata.json"  # guardamos info del entrenamiento
 
 import traceback
 
@@ -70,7 +78,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "tf_entry": "5m",
     "tf_trend": "1h",
     "live_chart_tf": "15m",
-    "mode": "feature_prob",  # feature_prob | legacy_classic
+    "mode": "feature_prob",  # feature_prob | legacy_classic | ml_model | hybrid
     "use_1h_trend_filter": True,
     "feature_prob": {
         "ret_1_weight": 0.10,
@@ -85,6 +93,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "long_threshold": 0.58,
         "short_threshold": 0.58,
         "persistence_bars": 2,
+    },
+    "hybrid": {
+        "ml_weight": 0.6,
+        "long_threshold": 0.58,
+        "short_threshold": 0.58,
     },
     "risk_engine": {
         "sl_vol_mult": 1.20,
@@ -132,6 +145,7 @@ raw_report_text = ""
 current_strategy_name = "default_feature"
 show_backtest_overlay = False
 
+backtest_running = False
 terminal_html = None
 stats_card = None
 raw_report_box = None
@@ -149,6 +163,9 @@ apolo_status_badge = None
 apolo_progress_label = None
 apolo_best_box = None
 apolo_meta_label = None
+ml_status_label = None
+ml_info_label = None
+ml_retrain_button = None
 
 param_controls: dict[str, Any] = {}
 param_value_chips: dict[str, Any] = {}
@@ -169,6 +186,10 @@ trading_process: subprocess.Popen | None = None
 trading_started_at: float | None = None
 trading_last_output_at: float | None = None
 last_trading_line: str | None = None
+
+retrain_process: subprocess.Popen | None = None
+retrain_started_at: float | None = None
+retrain_last_output_at: float | None = None
 
 news_items: list[dict[str, str]] = []
 news_last_fetch_at: float | None = None
@@ -231,7 +252,7 @@ PARAM_SECTIONS = [
         "items": [
             dict(path=("symbol",), label="Símbolo", typ="str", help="Par de trading en formato exchange."),
             dict(path=("market_symbol",), label="Market symbol", typ="str", help="Símbolo usado por el bot para órdenes."),
-            dict(path=("mode",), label="Motor", typ="str", choices=["feature_prob", "legacy_classic"], help="Elige motor moderno probabilístico o compatibilidad clásica."),
+            dict(path=("mode",), label="Motor", typ="str", choices=["feature_prob", "legacy_classic", "ml_model", "hybrid"], help="Elige motor: heurístico, clásico, solo ML o híbrido."),
             dict(path=("tf_signal",), label="TF señal", typ="str", choices=["5m", "15m", "30m", "1h"], help="Marco principal donde vive la estructura de señal."),
             dict(path=("tf_confirm",), label="TF confirmación", typ="str", choices=["1m", "3m", "5m", "15m"], help="Marco usado para confirmar entradas o timing fino."),
             dict(path=("tf_entry",), label="TF entrada", typ="str", choices=["1m", "3m", "5m", "15m"], help="Marco final de ejecución si el motor lo usa."),
@@ -243,7 +264,7 @@ PARAM_SECTIONS = [
         ],
     },
     {
-        "title": "Feature engine",
+        "title": "Feature engine (heurístico)",
         "icon": "auto_graph",
         "items": [
             dict(path=("feature_prob", "ret_1_weight"), label="Peso ret 1", typ="float", min_val=0.0, max_val=1.0, step=0.01, help="Peso del retorno de 1 barra."),
@@ -258,6 +279,15 @@ PARAM_SECTIONS = [
             dict(path=("feature_prob", "long_threshold"), label="Threshold long", typ="float", min_val=0.50, max_val=0.90, step=0.01, help="Umbral de probabilidad para largos."),
             dict(path=("feature_prob", "short_threshold"), label="Threshold short", typ="float", min_val=0.50, max_val=0.90, step=0.01, help="Umbral de probabilidad para cortos."),
             dict(path=("feature_prob", "persistence_bars"), label="Persistencia", typ="int", min_val=1, max_val=6, step=1, help="Barras consecutivas requeridas para confirmar señal."),
+        ],
+    },
+    {
+        "title": "Hybrid (ML + heurístico)",
+        "icon": "memory",
+        "items": [
+            dict(path=("hybrid", "ml_weight"), label="Peso ML", typ="float", min_val=0.0, max_val=1.0, step=0.01, help="Influencia del modelo ML (0=solo heurístico, 1=solo ML)."),
+            dict(path=("hybrid", "long_threshold"), label="Umbral long híbrido", typ="float", min_val=0.50, max_val=0.90, step=0.01, help="Umbral combinado para compra."),
+            dict(path=("hybrid", "short_threshold"), label="Umbral short híbrido", typ="float", min_val=0.50, max_val=0.90, step=0.01, help="Umbral combinado para venta."),
         ],
     },
     {
@@ -359,6 +389,27 @@ def format_value(value: Any, typ: str, unit: str | None = None) -> str:
         return f"{base}{unit or ''}"
     return str(value)
 
+def safe_float(value: Any, default: float | None = None) -> float | None:
+    try:
+        if value is None:
+            return default
+        if isinstance(value, str):
+            cleaned = value.strip().replace("%", "").replace(",", ".")
+            if cleaned == "":
+                return default
+            return float(cleaned)
+        return float(value)
+    except Exception:
+        return default
+
+
+def format_accuracy_text(acc: Any) -> str:
+    acc_num = safe_float(acc, None)
+    if acc_num is not None:
+        return f"{acc_num:.4f}"
+    if acc in (None, "", "N/A"):
+        return "N/A"
+    return str(acc)
 
 def refresh_parameter_controls() -> None:
     for section in PARAM_SECTIONS:
@@ -450,6 +501,8 @@ def write_ambient_state() -> None:
             "bot_running": bool(trading_process and trading_process.poll() is None),
             "best_params_exists": APOLO_BEST_FILE.exists(),
             "progress_exists": APOLO_PROGRESS_FILE.exists(),
+            "ml_model_exists": ML_MODEL_FILE.exists(),
+            "ml_metadata": load_ml_metadata() if ML_MODEL_FILE.exists() else None,
         }
         with open(AMBIENT_STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, ensure_ascii=False)
@@ -512,13 +565,35 @@ def render_terminal() -> None:
     if terminal_html is not None:
         terminal_html.set_content(terminal_markup())
 
-
 def append_log(msg: str) -> None:
     global last_log_time
     output_log.append(str(msg))
     last_log_time = time.time()
     render_terminal()
     write_ambient_state()
+
+def build_heuristic_features(df: pd.DataFrame) -> pd.DataFrame:
+    f = df.copy()
+
+    if "vol" not in f.columns:
+        if "volume" in f.columns:
+            f["vol"] = f["volume"]
+        else:
+            raise KeyError(f"build_heuristic_features expected 'vol' column. Available: {list(f.columns)}")
+
+    f["ret1"] = f["close"].pct_change(1)
+    f["ret3"] = f["close"].pct_change(3)
+    f["ret12"] = f["close"].pct_change(12)
+    f["range_pos"] = (f["close"] - f["low"]) / (f["high"] - f["low"] + 1e-9)
+    f["vol_ratio"] = f["vol"] / (f["vol"].rolling(20).mean() + 1e-9)
+    f["rv"] = realized_vol(f["close"])
+    f["rv_ratio"] = f["rv"] / (f["rv"].rolling(20).mean() + 1e-9)
+    f["ma_fast"] = f["close"].rolling(12).mean()
+    f["ma_slow"] = f["close"].rolling(36).mean()
+    f["slope"] = slope(f["ma_fast"].bfill())
+    f["breakout_up"] = f["close"] > f["high"].rolling(20).max().shift(1)
+    f["breakout_dn"] = f["close"] < f["low"].rolling(20).min().shift(1)
+    return f
 
 
 def export_terminal() -> None:
@@ -714,21 +789,10 @@ def fetch_bybit_klines(symbol: str = "BTCUSDT", interval: str = "15m", limit: in
     Obtiene velas de Bybit (API pública, sin autenticación).
     Intervalos soportados: 1m,3m,5m,15m,30m,1h,2h,4h,6h,12h,1d,1w,1M.
     """
-    # Mapeo de intervalos de NiceGUI a formato Bybit
     interval_map = {
-        "1m": "1",
-        "3m": "3",
-        "5m": "5",
-        "15m": "15",
-        "30m": "30",
-        "1h": "60",
-        "2h": "120",
-        "4h": "240",
-        "6h": "360",
-        "12h": "720",
-        "1d": "D",
-        "1w": "W",
-        "1M": "M",
+        "1m": "1", "3m": "3", "5m": "5", "15m": "15", "30m": "30",
+        "1h": "60", "2h": "120", "4h": "240", "6h": "360", "12h": "720",
+        "1d": "D", "1w": "W", "1M": "M"
     }
     bybit_interval = interval_map.get(interval, "15")
     url = f"https://api.bybit.com/v5/market/kline?category=spot&symbol={symbol}&interval={bybit_interval}&limit={limit}"
@@ -738,10 +802,8 @@ def fetch_bybit_klines(symbol: str = "BTCUSDT", interval: str = "15m", limit: in
     if data.get("retCode") != 0:
         raise Exception(f"Bybit API error: {data.get('retMsg')}")
     result = data["result"]
-    # result["list"] es una lista de listas: [timestamp, open, high, low, close, volume, turnover]
     klines = result["list"]
-    # Ordenar por timestamp ascendente (Bybit devuelve descendente por defecto)
-    klines.reverse()
+    klines.reverse()  # ascendente
     df = pd.DataFrame(klines, columns=["timestamp", "open", "high", "low", "close", "volume", "turnover"])
     for col in ["open", "high", "low", "close", "volume"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -751,14 +813,7 @@ def fetch_bybit_klines(symbol: str = "BTCUSDT", interval: str = "15m", limit: in
 
 
 def fetch_bybit_klines_idle(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 140) -> pd.DataFrame:
-    """Versión idle de la función anterior."""
     return fetch_bybit_klines(symbol, interval, limit)
-
-
-# ======================== FUNCIONES ORIGINALES DE BINANCE (comentadas, se mantienen por si se necesitan) ========================
-# def fetch_binance_klines(...)
-# def fetch_binance_klines_idle(...)
-# ====================================================================
 
 
 def infer_trade_columns(df: pd.DataFrame) -> tuple[str | None, str | None, str | None]:
@@ -985,18 +1040,37 @@ def run_backtest_with_logs(cfg: dict[str, Any], log_callback):
 
 
 def start_backtest() -> None:
+    global backtest_running
+
+    if backtest_running:
+        ui.notify("Ya hay un backtest en ejecución", type="warning")
+        append_log("[backtest] intento ignorado: ya había un backtest corriendo")
+        return
+
+    backtest_running = True
+
     if header_status is not None:
         header_status.set_text("BACKTEST RUNNING")
+
     queue_log("[backtest] iniciando ejecución...")
 
     def run() -> None:
-        runtime_cfg = build_runtime_config()
-        result = run_backtest_with_logs(runtime_cfg, queue_log)
-        if isinstance(result, tuple) and len(result) == 2:
-            trades, stats = result
-        else:
-            trades, stats = None, None
-        pending_results.put(("backtest", trades, stats))
+        global backtest_running
+        try:
+            runtime_cfg = build_runtime_config()
+            result = run_backtest_with_logs(runtime_cfg, queue_log)
+
+            if isinstance(result, tuple) and len(result) == 2:
+                trades, stats = result
+            else:
+                trades, stats = None, None
+
+            pending_results.put(("backtest", trades, stats))
+        except Exception as e:
+            queue_log(f"[error] backtest thread: {e}")
+            pending_results.put(("backtest", None, None))
+        finally:
+            backtest_running = False
 
     threading.Thread(target=run, daemon=True).start()
 
@@ -1333,555 +1407,116 @@ def refresh_apolo_status(force: bool = False) -> None:
         apolo_meta_label.set_text(" · ".join(meta_parts))
 
 
-def process_ui_events() -> None:
-    global stats_data, trades_data, raw_report_text, idle_message_index, last_ui_idle_emit, show_backtest_overlay
+# ======================== ML MODEL SECTION ========================
+def load_ml_metadata() -> dict:
+    """Carga metadatos del modelo (fecha, accuracy, etc.) si existe."""
+    if ML_METADATA_FILE.exists():
+        try:
+            return json.loads(ML_METADATA_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
 
-    while not pending_logs.empty():
-        append_log(pending_logs.get())
+def update_ml_status() -> None:
+    if ml_status_label is None:
+        return
 
-    while not pending_results.empty():
-        kind, trades, stats = pending_results.get()
-        if kind == "backtest":
-            if stats is not None:
-                stats_data = stats
-                trades_data = trades
-                show_backtest_overlay = True
-                append_log("[backtest] ejecución finalizada")
-                if header_status is not None:
-                    header_status.set_text("BACKTEST READY")
-                update_results()
-                raw_report_text = build_raw_report()
-                update_raw_report_box()
-                append_log("[report] reporte bruto actualizado")
-            else:
-                append_log("[backtest] sin resultados")
-                if header_status is not None:
-                    header_status.set_text("BACKTEST ERROR")
+    if ML_MODEL_FILE.exists():
+        meta = load_ml_metadata()
+        last_train = meta.get("last_train", "desconocida")
+        acc = meta.get("test_accuracy", "N/A")
+        acc_text = format_accuracy_text(acc)
 
-    now = time.time()
-
-    if market_watch_label is not None:
-        if news_items:
-            item = news_items[news_cursor % len(news_items)]
-            market_watch_label.set_text(item["title"])
-            if news_source_label is not None:
-                suffix = f" · {item['timestamp']}" if item.get("timestamp") else ""
-                news_source_label.set_text(f"{item.get('source', 'Live RSS')}{suffix}")
+        if acc_text != "N/A":
+            ml_status_label.set_text(
+                f"Modelo ML cargado (entrenado: {last_train} | acc: {acc_text})"
+            )
         else:
-            market_watch_label.set_text(FALLBACK_WATCH_MESSAGES[int(now // 5) % len(FALLBACK_WATCH_MESSAGES)])
-            if news_source_label is not None:
-                news_source_label.set_text("Fallback visual · esperando feed real")
-
-    if news_last_fetch_at is None or now - news_last_fetch_at > 600:
-        refresh_live_macro_news(background=True)
-
-    emit_live_news_to_terminal(now)
-
-    if not news_items and now - last_log_time > 8 and now - last_ui_idle_emit > 8:
-        queue_log(IDLE_MARKET_LINES[idle_message_index % len(IDLE_MARKET_LINES)])
-        idle_message_index += 1
-        last_ui_idle_emit = now
-
-    if live_chart_box is not None and now - last_chart_refresh_at > 60:
-        refresh_live_chart(force=False)
-
-    refresh_apolo_status()
-    write_ambient_state()
-
-
-def add_styles() -> None:
-    ui.add_head_html(
-        f"""
-        <style>
-            :root {{
-                --bg-main: {PALETTE["bg_main"]};
-                --bg-soft: {PALETTE["bg_soft"]};
-                --panel: {PALETTE["panel"]};
-                --panel-alt: {PALETTE["panel_alt"]};
-                --text-main: {PALETTE["text_main"]};
-                --text-soft: {PALETTE["text_soft"]};
-                --text-muted: {PALETTE["text_muted"]};
-                --border: {PALETTE["border"]};
-                --border-strong: {PALETTE["border_strong"]};
-                --primary: {PALETTE["primary_blue"]};
-                --primary-dark: {PALETTE["primary_blue_dark"]};
-                --accent-cyan: {PALETTE["accent_cyan"]};
-                --accent-coral: {PALETTE["accent_coral"]};
-                --accent-pink: {PALETTE["accent_pink"]};
-                --accent-peach: {PALETTE["accent_peach"]};
-                --accent-lavender: {PALETTE["accent_lavender"]};
-                --terminal-bg: {PALETTE["terminal_bg"]};
-                --terminal-panel: {PALETTE["terminal_panel"]};
-                --terminal-text: {PALETTE["terminal_text"]};
-                --terminal-muted: {PALETTE["terminal_muted"]};
-                --terminal-accent: {PALETTE["terminal_accent"]};
-            }}
-
-            body, .nicegui-content {{
-                background:
-                    radial-gradient(circle at 10% 10%, rgba(168,221,229,.42), transparent 22%),
-                    radial-gradient(circle at 92% 18%, rgba(233,138,107,.18), transparent 22%),
-                    radial-gradient(circle at 80% 82%, rgba(217,221,242,.35), transparent 20%),
-                    linear-gradient(180deg, #f8f5ee 0%, var(--bg-main) 100%);
-                color: var(--text-main);
-                font-family: Inter, Segoe UI, Arial, sans-serif;
-            }}
-
-            .page-shell {{
-                max-width: 1780px;
-                margin: 0 auto;
-                padding: 10px 14px 18px;
-            }}
-
-            .main-grid {{
-                display: grid;
-                grid-template-columns: minmax(520px, 1fr) minmax(560px, 1.2fr);
-                gap: 16px;
-                align-items: start;
-            }}
-
-            .left-sticky {{
-                position: sticky;
-                top: 8px;
-            }}
-
-            .hero-wrap {{
-                background: linear-gradient(135deg, rgba(255,255,255,.72), rgba(255,253,249,.90));
-                border: 1px solid rgba(200,191,175,.52);
-                box-shadow: 0 12px 30px rgba(35,68,107,.06);
-                border-radius: 22px;
-                padding: 12px 16px;
-                backdrop-filter: blur(10px);
-            }}
-
-            .hero-title {{
-                font-size: 22px;
-                font-weight: 800;
-                letter-spacing: .14em;
-                color: #143148;
-            }}
-
-            .hero-subtitle {{
-                color: var(--text-soft);
-                font-size: 12px;
-                line-height: 1.35;
-                max-width: 760px;
-            }}
-
-            .hero-badge {{
-                padding: 7px 12px;
-                border-radius: 999px;
-                font-size: 11px;
-                font-weight: 700;
-                border: 1px solid rgba(35,115,184,.18);
-                color: var(--primary-dark);
-                background: linear-gradient(135deg, rgba(168,221,229,.30), rgba(255,255,255,.78));
-            }}
-
-            .strategy-chip {{
-                margin-top: 8px;
-                display: inline-flex;
-                align-items: center;
-                gap: 8px;
-                padding: 9px 14px;
-                border-radius: 999px;
-                background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(248,246,241,.88));
-                border: 1px solid rgba(214,208,198,.86);
-                color: #23446b;
-                font-size: 12px;
-                font-weight: 700;
-                letter-spacing: .02em;
-                box-shadow: 0 8px 20px rgba(35,68,107,.05);
-            }}
-
-            .chart-header-row {{
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 12px;
-                margin-bottom: 8px;
-                flex-wrap: wrap;
-            }}
-
-            .ticker-band {{
-                margin-top: 8px;
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                flex-wrap: wrap;
-                background: rgba(255,255,255,.58);
-                border: 1px solid rgba(216,209,197,.72);
-                border-radius: 999px;
-                padding: 6px 12px;
-            }}
-
-            .ticker-kicker {{
-                font-size: 11px;
-                font-weight: 700;
-                letter-spacing: .12em;
-                text-transform: uppercase;
-                color: var(--primary-dark);
-                padding-right: 12px;
-                border-right: 1px solid rgba(216,209,197,.88);
-            }}
-
-            .ticker-text {{
-                color: var(--text-soft);
-                font-size: 12px;
-                flex: 1;
-            }}
-
-            .ticker-meta {{
-                color: var(--text-muted);
-                font-size: 11px;
-                white-space: nowrap;
-            }}
-
-            .header-actions {{
-                display: flex;
-                flex-wrap: wrap;
-                gap: 8px;
-                margin-top: 10px;
-            }}
-
-            .panel-card, .q-card {{
-                background: linear-gradient(180deg, rgba(255,255,255,.86), rgba(251,248,242,.94));
-                border-radius: 22px;
-                border: 1px solid rgba(200,191,175,.52);
-                box-shadow: 0 14px 36px rgba(35,68,107,.07);
-                padding: 16px;
-            }}
-
-            .section-title {{
-                font-size: 16px;
-                font-weight: 700;
-                letter-spacing: -.01em;
-            }}
-
-            .section-help {{
-                color: var(--text-soft);
-                font-size: 12px;
-                line-height: 1.45;
-            }}
-
-            .param-stack {{
-                display: flex;
-                flex-direction: column;
-                gap: 12px;
-            }}
-
-            .param-block {{
-                background: rgba(255,255,255,.52);
-                border: 1px solid rgba(216,209,197,.72);
-                border-radius: 18px;
-                padding: 12px 12px 10px;
-            }}
-
-            .param-head {{
-                display: flex;
-                justify-content: space-between;
-                align-items: start;
-                gap: 12px;
-                margin-bottom: 8px;
-            }}
-
-            .param-label {{
-                font-size: 13px;
-                font-weight: 700;
-                color: var(--text-main);
-            }}
-
-            .param-help {{
-                color: var(--text-muted);
-                font-size: 11px;
-                line-height: 1.35;
-            }}
-
-            .param-value-chip, .status-chip {{
-                padding: 6px 10px;
-                border-radius: 999px;
-                font-size: 11px;
-                font-weight: 700;
-                background: linear-gradient(135deg, rgba(35,115,184,.10), rgba(168,221,229,.24));
-                color: var(--primary-dark);
-                border: 1px solid rgba(35,115,184,.16);
-                min-width: 84px;
-                text-align: center;
-            }}
-
-            .param-input, .q-field__control {{
-                border-radius: 16px !important;
-                background: rgba(255,255,255,.90) !important;
-            }}
-
-            .q-field--outlined .q-field__control:before, .q-field--outlined .q-field__control:after {{
-                border-color: rgba(200,191,175,.90) !important;
-            }}
-
-            .q-slider {{ color: var(--primary); }}
-            .q-slider__track {{ color: var(--primary); }}
-            .q-slider__track-container {{ opacity: 1; }}
-            .q-slider__track-markers {{ color: rgba(200,191,175,.75) !important; }}
-            .q-slider__pin-text {{ font-weight: 700; }}
-            .q-toggle__thumb:after {{ background: var(--primary) !important; }}
-            .q-toggle__track {{ background: rgba(200,191,175,.92) !important; }}
-
-            .q-btn {{
-                border-radius: 12px;
-                text-transform: none;
-                font-weight: 700;
-                letter-spacing: .02em;
-                padding: 9px 14px;
-                font-size: 12px;
-                font-family: 'Fira Code', Consolas, monospace;
-                box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 8px 20px rgba(11,25,38,.10);
-            }}
-
-            .btn-primary {{
-                background: linear-gradient(180deg, rgba(30,47,66,.92), rgba(18,30,42,.98));
-                color: #e9f8ff;
-                border: 1px solid rgba(110,203,232,.22);
-            }}
-
-            .btn-soft {{
-                background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(250,248,244,.96));
-                color: #183247;
-                border: 1px solid rgba(210,205,195,.95);
-                box-shadow: 0 8px 18px rgba(35,68,107,.05);
-            }}
-
-            .btn-warm {{
-                background: linear-gradient(180deg, rgba(230,128,96,.98), rgba(184,74,49,.98));
-                color: #fff8f4;
-                border: 1px solid rgba(163,71,49,.34);
-                box-shadow: 0 14px 28px rgba(184,74,49,.22);
-            }}
-
-            .chart-shell {{
-                background: rgba(255,255,255,.72);
-                border-radius: 18px;
-                padding: 8px;
-            }}
-
-            .stat-chip {{
-                border-radius: 20px;
-                padding: 16px;
-                min-height: 100px;
-                box-shadow: 0 8px 20px rgba(35,68,107,.04);
-            }}
-
-            .stat-chip-title {{
-                font-size: 11px;
-                text-transform: uppercase;
-                letter-spacing: .08em;
-                color: var(--text-muted);
-                font-weight: 700;
-            }}
-
-            .stat-chip-value {{
-                margin-top: 8px;
-                font-size: 24px;
-                font-weight: 700;
-                color: var(--text-main);
-                letter-spacing: -.03em;
-            }}
-
-            .retro-terminal-shell {{
-                background: linear-gradient(180deg, rgba(15,23,32,.98), rgba(22,35,49,.98));
-                border-radius: 24px;
-                overflow: hidden;
-                border: 1px solid rgba(110,203,232,.18);
-                box-shadow: 0 18px 50px rgba(11,25,38,.28);
-            }}
-
-            .retro-terminal-toolbar {{
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                padding: 10px 14px;
-                border-bottom: 1px solid rgba(110,203,232,.12);
-                background: rgba(255,255,255,.02);
-            }}
-
-            .dot {{
-                width: 10px;
-                height: 10px;
-                border-radius: 999px;
-                display: inline-block;
-            }}
-
-            .dot-coral {{ background: var(--accent-coral); }}
-            .dot-peach {{ background: var(--accent-peach); }}
-            .dot-cyan {{ background: var(--terminal-accent); }}
-
-            .terminal-title {{
-                margin-left: 10px;
-                font-family: 'Fira Code', Consolas, monospace;
-                font-size: 12px;
-                letter-spacing: .08em;
-                color: var(--terminal-muted);
-            }}
-
-            .terminal-pulse {{
-                margin-left: auto;
-                width: 9px;
-                height: 9px;
-                border-radius: 999px;
-                background: var(--terminal-accent);
-                box-shadow: 0 0 14px rgba(110,203,232,.65);
-                animation: pulse-dot 1.5s infinite ease-in-out;
-            }}
-
-            .retro-terminal-body {{
-                padding: 14px;
-            }}
-
-            .terminal-pre {{
-                margin: 0;
-                min-height: calc(100vh - 106px);
-                max-height: calc(100vh - 106px);
-                overflow-y: auto;
-                color: var(--terminal-text);
-                background: transparent;
-                font-size: 12px;
-                line-height: 1.55;
-                font-family: 'Fira Code', Consolas, monospace;
-                display: flex;
-                flex-direction: column;
-                gap: 0;
-            }}
-
-            .log-line {{
-                padding: 3px 0;
-                border-bottom: 1px solid rgba(255,255,255,.03);
-            }}
-
-            .log-news {{ color: #8fe7ff; }}
-            .log-apolo {{ color: #ffd39f; }}
-            .log-backtest {{ color: #b8f1c8; }}
-            .log-bot {{ color: #f7c2d8; }}
-            .log-config {{ color: #d9ddf2; }}
-            .log-report {{ color: #f6e29a; }}
-            .log-error {{ color: #ff9b9b; font-weight: 700; }}
-            .log-watch {{ color: #8fb3c1; }}
-            .log-plain {{ color: var(--terminal-text); }}
-
-            .terminal-actions {{
-                display: flex;
-                justify-content: flex-end;
-                gap: 10px;
-                margin-top: 10px;
-                flex-wrap: wrap;
-            }}
-
-            .terminal-status-row {{
-                display: flex;
-                align-items: center;
-                gap: 16px;
-                margin-top: 14px;
-            }}
-
-            .terminal-progress {{
-                height: 8px;
-                border-radius: 999px;
-                background: rgba(255,255,255,.07);
-                flex: 1;
-                overflow: hidden;
-            }}
-
-            .terminal-progress span {{
-                display: block;
-                width: 38%;
-                height: 100%;
-                border-radius: 999px;
-                background: linear-gradient(90deg, rgba(110,203,232,.18), var(--terminal-accent), rgba(110,203,232,.18));
-                animation: terminal-flow 2.4s infinite linear;
-            }}
-
-            .terminal-cursor {{
-                color: var(--terminal-accent);
-                font-family: 'Fira Code', Consolas, monospace;
-                animation: blink 1.0s steps(1) infinite;
-            }}
-
-            .glass-tabs {{
-                background: linear-gradient(180deg, rgba(16,25,35,.96), rgba(22,35,49,.96));
-                border: 1px solid rgba(110,203,232,.14);
-                border-radius: 16px;
-                padding: 6px;
-            }}
-
-            .glass-tabs .q-tab {{
-                border-radius: 12px;
-                margin-right: 6px;
-                padding: 8px 14px;
-                min-height: 38px;
-                color: var(--terminal-muted) !important;
-                background: rgba(255,255,255,.02);
-                font-family: 'Fira Code', Consolas, monospace;
-            }}
-
-            .glass-tabs .q-tab--active {{
-                background: linear-gradient(180deg, rgba(32,49,67,.98), rgba(16,25,35,.98));
-                color: var(--terminal-text) !important;
-                border: 1px solid rgba(110,203,232,.18);
-            }}
-
-            .apolo-grid {{
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 14px;
-            }}
-
-            .mini-pre {{
-                margin: 0;
-                white-space: pre-wrap;
-                font-family: 'Fira Code', Consolas, monospace;
-                font-size: 12px;
-                line-height: 1.55;
-                color: var(--text-main);
-            }}
-
-            .raw-report-box textarea {{
-                font-family: Consolas, monospace !important;
-                font-size: 12px !important;
-                min-height: 340px !important;
-            }}
-
-            @keyframes pulse-dot {{
-                0%,100% {{ transform: scale(1); opacity: .75; }}
-                50% {{ transform: scale(1.25); opacity: 1; }}
-            }}
-
-            @keyframes blink {{
-                0%,49% {{ opacity: 1; }}
-                50%,100% {{ opacity: 0; }}
-            }}
-
-            @keyframes terminal-flow {{
-                0% {{ transform: translateX(-100%); }}
-                100% {{ transform: translateX(260%); }}
-            }}
-
-            @media (max-width: 1280px) {{
-                .main-grid {{ grid-template-columns: 1fr; }}
-                .left-sticky {{ position: static; }}
-                .terminal-pre {{ min-height: 420px; max-height: 420px; }}
-                .apolo-grid {{ grid-template-columns: 1fr; }}
-                .ticker-meta {{ width: 100%; }}
-            }}
-        </style>
-        """
-    )
-
+            ml_status_label.set_text(
+                f"Modelo ML cargado (entrenado: {last_train})"
+            )
+
+        if ml_info_label is not None:
+            if acc_text != "N/A":
+                ml_info_label.set_text(
+                    f"Último entrenamiento: {last_train} | Precisión en test: {acc_text}"
+                )
+            else:
+                ml_info_label.set_text(f"Último entrenamiento: {last_train}")
+    else:
+        ml_status_label.set_text("Modelo ML no encontrado")
+        if ml_info_label is not None:
+            ml_info_label.set_text("Modelo no encontrado. Ejecuta reentrenamiento para generarlo.")
+
+def read_retrain_pipe(pipe) -> None:
+    global retrain_last_output_at
+    for raw_line in iter(pipe.readline, ""):
+        for line in normalize_stream_line(raw_line):
+            retrain_last_output_at = time.time()
+            queue_log(f"[trainer] {line}")
+    pipe.close()
+
+def start_retrain() -> None:
+    global retrain_process, retrain_started_at, retrain_last_output_at
+
+    if retrain_process and retrain_process.poll() is None:
+        ui.notify("Ya hay un proceso de reentrenamiento en ejecución", type="warning")
+        return
+
+    if not TRAINER_SCRIPT.exists():
+        ui.notify(f"No se encontró {TRAINER_SCRIPT.name}", type="negative")
+        return
+
+    append_log("[trainer] Iniciando reentrenamiento del modelo ML...")
+    ui.notify("Reentrenamiento iniciado. Revisa la terminal para progreso.", type="info")
+
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    cmd = [sys.executable, TRAINER_SCRIPT.name]
+
+    try:
+        retrain_process = subprocess.Popen(
+            cmd,
+            cwd=BASE_DIR,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,
+            universal_newlines=True,
+            env=env,
+        )
+        retrain_started_at = time.time()
+        retrain_last_output_at = retrain_started_at
+        threading.Thread(target=read_retrain_pipe, args=(retrain_process.stdout,), daemon=True).start()
+
+        # Esperar a que termine para actualizar metadatos
+        def wait_retrain():
+            retrain_process.wait()
+            # Actualizar metadatos (podríamos extraer accuracy del log, pero por ahora solo marcamos fecha)
+            try:
+                meta = {"last_train": time.strftime("%Y-%m-%d %H:%M:%S"), "test_accuracy": "desconocida"}
+                # Intenta leer accuracy desde el último log (simplificado)
+                # Podríamos parsear el log, pero dejamos simple
+                with open(ML_METADATA_FILE, "w", encoding="utf-8") as f:
+                    json.dump(meta, f, indent=2)
+                append_log("[trainer] Reentrenamiento completado. Metadatos actualizados.")
+                update_ml_status()
+            except Exception as e:
+                append_log(f"[error] No se pudo guardar metadatos: {e}")
+        threading.Thread(target=wait_retrain, daemon=True).start()
+
+    except Exception as e:
+        ui.notify(f"Error iniciando reentrenamiento: {e}", type="negative")
+        append_log(f"[error] start_retrain: {e}")
 
 # ======================== IDLE PAGE (INTEGRADA) ========================
-IDLE_ASSET_BG = BASE_DIR / "cryp_co_012.png"
-
 @ui.page("/idle")
 def idle_page() -> None:
-    """Página STRATUM Idle (monitoreo pasivo) integrada en la misma aplicación."""
-    # Copiar estado compartido desde la GUI principal
+    """Página STRATUM Idle (monitoreo pasivo) integrada."""
+    # Reutilizar la misma paleta y estilos
+    add_styles()  # ya definida más abajo
+
     idle_state = {
         'last_terminal_line': '[idle] waiting for signal...',
         'headline': 'Awaiting signal',
@@ -1991,10 +1626,6 @@ def idle_page() -> None:
         </div>
         '''
 
-    # Usar la misma función de Bybit para la página idle
-    def fetch_bybit_klines_idle(symbol: str = 'BTCUSDT', interval: str = '15m', limit: int = 140) -> pd.DataFrame:
-        return fetch_bybit_klines(symbol, interval, limit)
-
     def update_market_stats(df: pd.DataFrame) -> None:
         if df.empty:
             return
@@ -2102,8 +1733,6 @@ def idle_page() -> None:
             terminal_box.set_content(build_terminal_markup(idle_state['terminal_lines']))
 
     # Construir la interfaz Idle
-    add_styles()  # Reutilizar estilos de la GUI principal
-
     with ui.column().classes('ambient-shell w-full'):
         with ui.element('div').classes('ambient-surface'):
             with ui.element('div').classes('ambient-grid'):
@@ -2155,15 +1784,16 @@ def idle_page() -> None:
 
     ui.timer(2.0, idle_refresh_loop)
     ui.timer(30.0, lambda: render_candles_idle(candle_box))
-    idle_refresh_loop()  # inicial
+    idle_refresh_loop()
 
 
 # ======================== DASHBOARD PRINCIPAL (con enlace a idle) ========================
 def build_dashboard() -> None:
-    """Construye la interfaz principal de STRATUM (sin autenticación)."""
+    """Construye la interfaz principal de STRATUM."""
     global terminal_html, stats_card, raw_report_box, plot_eq, plot_pie, plot_hist, plot_scatter, plot_bar, live_chart_box
     global header_status, market_watch_label, news_source_label, strategy_name_label
     global apolo_status_badge, apolo_progress_label, apolo_best_box, apolo_meta_label
+    global ml_status_label, ml_info_label, ml_retrain_button
 
     add_styles()
 
@@ -2211,11 +1841,11 @@ def build_dashboard() -> None:
                         ui.button("Guardar estrategia", on_click=prompt_save_strategy).classes("btn-soft")
                         ui.button("Iniciar bot de trading", on_click=prompt_launch_bot).classes("btn-warm")
                         ui.button("Vista IDLE", on_click=lambda: ui.navigate.to("/idle")).classes("btn-soft")
-                        ui.button("Abrir STRATUM IDLE", on_click=lambda: ui.navigate.to("/idle")).classes("btn-soft")  # redundante pero claro
 
                 with ui.tabs().classes("glass-tabs w-full") as tabs:
                     tab_params = ui.tab("Parámetros")
                     tab_apolo = ui.tab("Apolo")
+                    tab_ml = ui.tab("ML Model")
                     tab_stats = ui.tab("Resumen")
                     tab_charts = ui.tab("Gráficos")
 
@@ -2223,11 +1853,11 @@ def build_dashboard() -> None:
                     with ui.tab_panel(tab_params):
                         with ui.card().classes("panel-card w-full"):
                             ui.label("Strategy model").classes("section-title")
-                            ui.label("Feature engine moderno + legacy mode de compatibilidad.").classes("section-help mb-4")
+                            ui.label("Configuración de los motores: heurístico (feature_prob), clásico (legacy), solo ML o híbrido.").classes("section-help mb-4")
 
                             with ui.column().classes("param-stack w-full"):
                                 for section in PARAM_SECTIONS:
-                                    expansion_open = section["title"] == "Mercado y ejecución"
+                                    expansion_open = section["title"] in ("Mercado y ejecución", "Feature engine (heurístico)", "Hybrid (ML + heurístico)")
                                     with ui.expansion(section["title"], icon=section["icon"], value=expansion_open).classes("w-full"):
                                         for item in section["items"]:
                                             typ = item["typ"]
@@ -2289,6 +1919,29 @@ def build_dashboard() -> None:
                                     ui.label("Mejores parámetros encontrados").classes("section-title")
                                     apolo_best_box = ui.html(render_best_params(None)).classes("w-full")
 
+                    with ui.tab_panel(tab_ml):
+                        with ui.card().classes("panel-card w-full"):
+                            ui.label("Machine Learning Model").classes("section-title")
+                            ui.label("Modelo XGBoost entrenado con datos multi‑timeframe (1m,15m,30m,1h,1d,1w).").classes("section-help mb-4")
+
+                            with ui.row().classes("w-full gap-4 items-center"):
+                                ml_status_label = ui.label("Cargando estado...").classes("param-value-chip")
+                                ml_retrain_button = ui.button("Reentrenar modelo", on_click=start_retrain).classes("btn-primary")
+
+                            ml_info_label = ui.label("Información del modelo aparecerá aquí.").classes("section-help mt-4")
+
+                            # Mostrar detalles del modelo actual si existe
+                            if ML_MODEL_FILE.exists():
+                                meta = load_ml_metadata()
+                                last_train = meta.get("last_train", "desconocida")
+                                acc = meta.get("test_accuracy", "N/A")
+                                if acc != "N/A":
+                                    try:
+                                        acc_str = f"{float(acc):.4f}"
+                                        ml_status_label.set_text(f"Modelo ML cargado (entrenado: {last_train} | acc: {acc_str})")
+                                    except (ValueError, TypeError):
+                                        ml_status_label.set_text(f"Modelo ML cargado (entrenado: {last_train})")
+
                     with ui.tab_panel(tab_stats):
                         with ui.card().classes("panel-card w-full"):
                             ui.label("Estadísticas del backtest").classes("section-title")
@@ -2337,6 +1990,7 @@ def build_dashboard() -> None:
     refresh_live_macro_news(background=True)
     refresh_live_chart(force=True)
     write_ambient_state()
+    update_ml_status()
 
 
 # ======================== DOGMA LANDING PAGE ========================
@@ -2887,7 +2541,7 @@ def render_dogma_landing() -> None:
 
 
 # ======================== LOGIN Y ARRANQUE ========================
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "1234")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Xiutec314")
 
 @ui.page("/")
 def landing_page() -> None:
@@ -2928,6 +2582,893 @@ def init_user_session():
         app.storage.user.update({'authenticated': False})
 
 app.on_connect(init_user_session)
+
+# Funciones auxiliares de estilos (ya definidas arriba)
+def add_styles() -> None:
+    ui.add_head_html(
+        f"""
+        <style>
+            :root {{
+                --bg-main: {PALETTE["bg_main"]};
+                --bg-soft: {PALETTE["bg_soft"]};
+                --panel: {PALETTE["panel"]};
+                --panel-alt: {PALETTE["panel_alt"]};
+                --text-main: {PALETTE["text_main"]};
+                --text-soft: {PALETTE["text_soft"]};
+                --text-muted: {PALETTE["text_muted"]};
+                --border: {PALETTE["border"]};
+                --border-strong: {PALETTE["border_strong"]};
+                --primary: {PALETTE["primary_blue"]};
+                --primary-dark: {PALETTE["primary_blue_dark"]};
+                --accent-cyan: {PALETTE["accent_cyan"]};
+                --accent-coral: {PALETTE["accent_coral"]};
+                --accent-pink: {PALETTE["accent_pink"]};
+                --accent-peach: {PALETTE["accent_peach"]};
+                --accent-lavender: {PALETTE["accent_lavender"]};
+                --terminal-bg: {PALETTE["terminal_bg"]};
+                --terminal-panel: {PALETTE["terminal_panel"]};
+                --terminal-text: {PALETTE["terminal_text"]};
+                --terminal-muted: {PALETTE["terminal_muted"]};
+                --terminal-accent: {PALETTE["terminal_accent"]};
+            }}
+
+            body, .nicegui-content {{
+                background:
+                    radial-gradient(circle at 10% 10%, rgba(168,221,229,.42), transparent 22%),
+                    radial-gradient(circle at 92% 18%, rgba(233,138,107,.18), transparent 22%),
+                    radial-gradient(circle at 80% 82%, rgba(217,221,242,.35), transparent 20%),
+                    linear-gradient(180deg, #f8f5ee 0%, var(--bg-main) 100%);
+                color: var(--text-main);
+                font-family: Inter, Segoe UI, Arial, sans-serif;
+            }}
+
+            .page-shell {{
+                max-width: 1780px;
+                margin: 0 auto;
+                padding: 10px 14px 18px;
+            }}
+
+            .main-grid {{
+                display: grid;
+                grid-template-columns: minmax(520px, 1fr) minmax(560px, 1.2fr);
+                gap: 16px;
+                align-items: start;
+            }}
+
+            .left-sticky {{
+                position: sticky;
+                top: 8px;
+            }}
+
+            .hero-wrap {{
+                background: linear-gradient(135deg, rgba(255,255,255,.72), rgba(255,253,249,.90));
+                border: 1px solid rgba(200,191,175,.52);
+                box-shadow: 0 12px 30px rgba(35,68,107,.06);
+                border-radius: 22px;
+                padding: 12px 16px;
+                backdrop-filter: blur(10px);
+            }}
+
+            .hero-title {{
+                font-size: 22px;
+                font-weight: 800;
+                letter-spacing: .14em;
+                color: #143148;
+            }}
+
+            .hero-subtitle {{
+                color: var(--text-soft);
+                font-size: 12px;
+                line-height: 1.35;
+                max-width: 760px;
+            }}
+
+            .hero-badge {{
+                padding: 7px 12px;
+                border-radius: 999px;
+                font-size: 11px;
+                font-weight: 700;
+                border: 1px solid rgba(35,115,184,.18);
+                color: var(--primary-dark);
+                background: linear-gradient(135deg, rgba(168,221,229,.30), rgba(255,255,255,.78));
+            }}
+
+            .strategy-chip {{
+                margin-top: 8px;
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 9px 14px;
+                border-radius: 999px;
+                background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(248,246,241,.88));
+                border: 1px solid rgba(214,208,198,.86);
+                color: #23446b;
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: .02em;
+                box-shadow: 0 8px 20px rgba(35,68,107,.05);
+            }}
+
+            .chart-header-row {{
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                margin-bottom: 8px;
+                flex-wrap: wrap;
+            }}
+
+            .ticker-band {{
+                margin-top: 8px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+                background: rgba(255,255,255,.58);
+                border: 1px solid rgba(216,209,197,.72);
+                border-radius: 999px;
+                padding: 6px 12px;
+            }}
+
+            .ticker-kicker {{
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: .12em;
+                text-transform: uppercase;
+                color: var(--primary-dark);
+                padding-right: 12px;
+                border-right: 1px solid rgba(216,209,197,.88);
+            }}
+
+            .ticker-text {{
+                color: var(--text-soft);
+                font-size: 12px;
+                flex: 1;
+            }}
+
+            .ticker-meta {{
+                color: var(--text-muted);
+                font-size: 11px;
+                white-space: nowrap;
+            }}
+
+            .header-actions {{
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 10px;
+            }}
+
+            .panel-card, .q-card {{
+                background: linear-gradient(180deg, rgba(255,255,255,.86), rgba(251,248,242,.94));
+                border-radius: 22px;
+                border: 1px solid rgba(200,191,175,.52);
+                box-shadow: 0 14px 36px rgba(35,68,107,.07);
+                padding: 16px;
+            }}
+
+            .section-title {{
+                font-size: 16px;
+                font-weight: 700;
+                letter-spacing: -.01em;
+            }}
+
+            .section-help {{
+                color: var(--text-soft);
+                font-size: 12px;
+                line-height: 1.45;
+            }}
+
+            .param-stack {{
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }}
+
+            .param-block {{
+                background: rgba(255,255,255,.52);
+                border: 1px solid rgba(216,209,197,.72);
+                border-radius: 18px;
+                padding: 12px 12px 10px;
+            }}
+
+            .param-head {{
+                display: flex;
+                justify-content: space-between;
+                align-items: start;
+                gap: 12px;
+                margin-bottom: 8px;
+            }}
+
+            .param-label {{
+                font-size: 13px;
+                font-weight: 700;
+                color: var(--text-main);
+            }}
+
+            .param-help {{
+                color: var(--text-muted);
+                font-size: 11px;
+                line-height: 1.35;
+            }}
+
+            .param-value-chip, .status-chip {{
+                padding: 6px 10px;
+                border-radius: 999px;
+                font-size: 11px;
+                font-weight: 700;
+                background: linear-gradient(135deg, rgba(35,115,184,.10), rgba(168,221,229,.24));
+                color: var(--primary-dark);
+                border: 1px solid rgba(35,115,184,.16);
+                min-width: 84px;
+                text-align: center;
+            }}
+
+            .param-input, .q-field__control {{
+                border-radius: 16px !important;
+                background: rgba(255,255,255,.90) !important;
+            }}
+
+            .q-field--outlined .q-field__control:before, .q-field--outlined .q-field__control:after {{
+                border-color: rgba(200,191,175,.90) !important;
+            }}
+
+            .q-slider {{ color: var(--primary); }}
+            .q-slider__track {{ color: var(--primary); }}
+            .q-slider__track-container {{ opacity: 1; }}
+            .q-slider__track-markers {{ color: rgba(200,191,175,.75) !important; }}
+            .q-slider__pin-text {{ font-weight: 700; }}
+            .q-toggle__thumb:after {{ background: var(--primary) !important; }}
+            .q-toggle__track {{ background: rgba(200,191,175,.92) !important; }}
+
+            .q-btn {{
+                border-radius: 12px;
+                text-transform: none;
+                font-weight: 700;
+                letter-spacing: .02em;
+                padding: 9px 14px;
+                font-size: 12px;
+                font-family: 'Fira Code', Consolas, monospace;
+                box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 8px 20px rgba(11,25,38,.10);
+            }}
+
+            .btn-primary {{
+                background: linear-gradient(180deg, rgba(30,47,66,.92), rgba(18,30,42,.98));
+                color: #e9f8ff;
+                border: 1px solid rgba(110,203,232,.22);
+            }}
+
+            .btn-soft {{
+                background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(250,248,244,.96));
+                color: #183247;
+                border: 1px solid rgba(210,205,195,.95);
+                box-shadow: 0 8px 18px rgba(35,68,107,.05);
+            }}
+
+            .btn-warm {{
+                background: linear-gradient(180deg, rgba(230,128,96,.98), rgba(184,74,49,.98));
+                color: #fff8f4;
+                border: 1px solid rgba(163,71,49,.34);
+                box-shadow: 0 14px 28px rgba(184,74,49,.22);
+            }}
+
+            .chart-shell {{
+                background: rgba(255,255,255,.72);
+                border-radius: 18px;
+                padding: 8px;
+            }}
+
+            .stat-chip {{
+                border-radius: 20px;
+                padding: 16px;
+                min-height: 100px;
+                box-shadow: 0 8px 20px rgba(35,68,107,.04);
+            }}
+
+            .stat-chip-title {{
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: .08em;
+                color: var(--text-muted);
+                font-weight: 700;
+            }}
+
+            .stat-chip-value {{
+                margin-top: 8px;
+                font-size: 24px;
+                font-weight: 700;
+                color: var(--text-main);
+                letter-spacing: -.03em;
+            }}
+
+            .retro-terminal-shell {{
+                background: linear-gradient(180deg, rgba(15,23,32,.98), rgba(22,35,49,.98));
+                border-radius: 24px;
+                overflow: hidden;
+                border: 1px solid rgba(110,203,232,.18);
+                box-shadow: 0 18px 50px rgba(11,25,38,.28);
+            }}
+
+            .retro-terminal-toolbar {{
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 10px 14px;
+                border-bottom: 1px solid rgba(110,203,232,.12);
+                background: rgba(255,255,255,.02);
+            }}
+
+            .dot {{
+                width: 10px;
+                height: 10px;
+                border-radius: 999px;
+                display: inline-block;
+            }}
+
+            .dot-coral {{ background: var(--accent-coral); }}
+            .dot-peach {{ background: var(--accent-peach); }}
+            .dot-cyan {{ background: var(--terminal-accent); }}
+
+            .terminal-title {{
+                margin-left: 10px;
+                font-family: 'Fira Code', Consolas, monospace;
+                font-size: 12px;
+                letter-spacing: .08em;
+                color: var(--terminal-muted);
+            }}
+
+            .terminal-pulse {{
+                margin-left: auto;
+                width: 9px;
+                height: 9px;
+                border-radius: 999px;
+                background: var(--terminal-accent);
+                box-shadow: 0 0 14px rgba(110,203,232,.65);
+                animation: pulse-dot 1.5s infinite ease-in-out;
+            }}
+
+            .retro-terminal-body {{
+                padding: 14px;
+            }}
+
+            .terminal-pre {{
+                margin: 0;
+                min-height: calc(100vh - 106px);
+                max-height: calc(100vh - 106px);
+                overflow-y: auto;
+                color: var(--terminal-text);
+                background: transparent;
+                font-size: 12px;
+                line-height: 1.55;
+                font-family: 'Fira Code', Consolas, monospace;
+                display: flex;
+                flex-direction: column;
+                gap: 0;
+            }}
+
+            .log-line {{
+                padding: 3px 0;
+                border-bottom: 1px solid rgba(255,255,255,.03);
+            }}
+
+            .log-news {{ color: #8fe7ff; }}
+            .log-apolo {{ color: #ffd39f; }}
+            .log-backtest {{ color: #b8f1c8; }}
+            .log-bot {{ color: #f7c2d8; }}
+            .log-config {{ color: #d9ddf2; }}
+            .log-report {{ color: #f6e29a; }}
+            .log-error {{ color: #ff9b9b; font-weight: 700; }}
+            .log-watch {{ color: #8fb3c1; }}
+            .log-plain {{ color: var(--terminal-text); }}
+
+            .terminal-actions {{
+                display: flex;
+                justify-content: flex-end;
+                gap: 10px;
+                margin-top: 10px;
+                flex-wrap: wrap;
+            }}
+
+            .terminal-status-row {{
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                margin-top: 14px;
+            }}
+
+            .terminal-progress {{
+                height: 8px;
+                border-radius: 999px;
+                background: rgba(255,255,255,.07);
+                flex: 1;
+                overflow: hidden;
+            }}
+
+            .terminal-progress span {{
+                display: block;
+                width: 38%;
+                height: 100%;
+                border-radius: 999px;
+                background: linear-gradient(90deg, rgba(110,203,232,.18), var(--terminal-accent), rgba(110,203,232,.18));
+                animation: terminal-flow 2.4s infinite linear;
+            }}
+
+            .terminal-cursor {{
+                color: var(--terminal-accent);
+                font-family: 'Fira Code', Consolas, monospace;
+                animation: blink 1.0s steps(1) infinite;
+            }}
+
+            .glass-tabs {{
+                background: linear-gradient(180deg, rgba(16,25,35,.96), rgba(22,35,49,.96));
+                border: 1px solid rgba(110,203,232,.14);
+                border-radius: 16px;
+                padding: 6px;
+            }}
+
+            .glass-tabs .q-tab {{
+                border-radius: 12px;
+                margin-right: 6px;
+                padding: 8px 14px;
+                min-height: 38px;
+                color: var(--terminal-muted) !important;
+                background: rgba(255,255,255,.02);
+                font-family: 'Fira Code', Consolas, monospace;
+            }}
+
+            .glass-tabs .q-tab--active {{
+                background: linear-gradient(180deg, rgba(32,49,67,.98), rgba(16,25,35,.98));
+                color: var(--terminal-text) !important;
+                border: 1px solid rgba(110,203,232,.18);
+            }}
+
+            .apolo-grid {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 14px;
+            }}
+
+            .mini-pre {{
+                margin: 0;
+                white-space: pre-wrap;
+                font-family: 'Fira Code', Consolas, monospace;
+                font-size: 12px;
+                line-height: 1.55;
+                color: var(--text-main);
+            }}
+
+            .raw-report-box textarea {{
+                font-family: Consolas, monospace !important;
+                font-size: 12px !important;
+                min-height: 340px !important;
+            }}
+
+            /* Idle page styles (ambient) */
+            .ambient-shell {{
+                min-height: 100vh;
+                padding: 18px;
+            }}
+
+            .ambient-surface {{
+                min-height: calc(100vh - 36px);
+                border-radius: 38px;
+                background:
+                    linear-gradient(180deg, rgba(255,255,255,.20), rgba(255,255,255,.08)),
+                    linear-gradient(135deg, rgba(255,255,255,.14), transparent 36%);
+                border: 1px solid rgba(255,255,255,.24);
+                box-shadow: 0 28px 90px rgba(35,68,107,.10), inset 0 1px 0 rgba(255,255,255,.34);
+                backdrop-filter: blur(22px);
+                overflow: hidden;
+                position: relative;
+            }}
+
+            .ambient-surface::before {{
+                content: '';
+                position: absolute;
+                inset: 0;
+                background:
+                    radial-gradient(circle at 16% 18%, rgba(168,221,229,.16), transparent 22%),
+                    radial-gradient(circle at 86% 14%, rgba(233,138,107,.10), transparent 18%),
+                    radial-gradient(circle at 74% 80%, rgba(217,221,242,.14), transparent 18%);
+                pointer-events: none;
+            }}
+
+            .ambient-grid {{
+                position: relative;
+                z-index: 1;
+                min-height: calc(100vh - 36px);
+                display: grid;
+                grid-template-columns: 1.08fr .92fr;
+            }}
+
+            .ambient-left {{
+                padding: 34px 36px 28px;
+                display: grid;
+                grid-template-rows: auto auto 1fr auto;
+                gap: 20px;
+            }}
+
+            .ambient-right {{
+                padding: 24px 28px 24px 8px;
+                display: grid;
+                align-items: stretch;
+            }}
+
+            .brand-row {{
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 16px;
+                flex-wrap: wrap;
+            }}
+
+            .brand-wrap {{
+                display: grid;
+                gap: 6px;
+            }}
+
+            .brand-title {{
+                font-size: 32px;
+                font-weight: 800;
+                letter-spacing: .16em;
+                color: #143148;
+            }}
+
+            .brand-sub {{
+                font-size: 11px;
+                letter-spacing: .18em;
+                text-transform: uppercase;
+                color: #5c7785;
+                font-family: Fira Code, Consolas, monospace;
+            }}
+
+            .top-right-wrap {{
+                display: grid;
+                gap: 10px;
+                justify-items: end;
+            }}
+
+            .strategy-pill {{
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 10px 14px;
+                border-radius: 999px;
+                background: linear-gradient(180deg, rgba(255,255,255,.42), rgba(255,255,255,.22));
+                border: 1px solid rgba(255,255,255,.42);
+                color: #22436c;
+                font-size: 12px;
+                font-weight: 700;
+                backdrop-filter: blur(14px);
+                box-shadow: 0 10px 28px rgba(35,68,107,.06);
+            }}
+
+            .ambient-nav-btn {{
+                border-radius: 999px;
+                padding: 10px 14px;
+                font-size: 12px;
+                font-weight: 700;
+                font-family: Fira Code, Consolas, monospace;
+                letter-spacing: .05em;
+                background: linear-gradient(180deg, rgba(255,255,255,.38), rgba(255,255,255,.18));
+                color: #173149;
+                border: 1px solid rgba(255,255,255,.34);
+                backdrop-filter: blur(12px);
+                box-shadow: 0 8px 18px rgba(35,68,107,.06);
+            }}
+
+            .eyebrow {{
+                color: #597382;
+                text-transform: uppercase;
+                letter-spacing: .20em;
+                font-size: 11px;
+                font-family: Fira Code, Consolas, monospace;
+            }}
+
+            .hero-block {{
+                display: grid;
+                gap: 12px;
+                align-content: start;
+            }}
+
+            .hero-text {{
+                font-size: clamp(32px, 5vw, 72px);
+                line-height: 1.0;
+                letter-spacing: -.05em;
+                font-weight: 800;
+                max-width: 12ch;
+                text-wrap: balance;
+                background: linear-gradient(135deg, #163149 0%, #2f6ea2 38%, #d18468 72%, #e6a48d 100%);
+                -webkit-background-clip: text;
+                background-clip: text;
+                color: transparent;
+            }}
+
+            .signal-label {{
+                color: #587385;
+                font-size: 12px;
+                font-family: Fira Code, Consolas, monospace;
+            }}
+
+            .meta-row {{
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+                align-items: center;
+            }}
+
+            .soft-chip {{
+                display: inline-flex;
+                align-items: center;
+                padding: 10px 14px;
+                border-radius: 999px;
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: .06em;
+                font-family: Fira Code, Consolas, monospace;
+                background: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,.12));
+                border: 1px solid rgba(255,255,255,.24);
+                color: #28465e;
+                backdrop-filter: blur(14px);
+            }}
+
+            .meta-line {{
+                color: #5f7583;
+                font-size: 12px;
+                font-family: Fira Code, Consolas, monospace;
+            }}
+
+            .clock-line {{
+                color: #2b5570;
+                font-size: 24px;
+                font-weight: 700;
+                letter-spacing: .08em;
+                font-family: Fira Code, Consolas, monospace;
+            }}
+
+            .float-panel {{
+                height: 100%;
+                border-radius: 34px;
+                background: linear-gradient(180deg, rgba(255,255,255,.24), rgba(255,255,255,.10));
+                border: 1px solid rgba(255,255,255,.24);
+                box-shadow: inset 0 1px 0 rgba(255,255,255,.34), 0 18px 50px rgba(35,68,107,.08);
+                backdrop-filter: blur(18px);
+                padding: 16px;
+                display: grid;
+                grid-template-rows: auto auto auto 1fr;
+                gap: 14px;
+            }}
+
+            .panel-kicker {{
+                color: #5a7382;
+                text-transform: uppercase;
+                letter-spacing: .18em;
+                font-size: 11px;
+                font-family: Fira Code, Consolas, monospace;
+            }}
+
+            .market-stats {{
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+            }}
+
+            .stat-card {{
+                border-radius: 22px;
+                padding: 12px 14px;
+                background: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,.12));
+                border: 1px solid rgba(255,255,255,.24);
+                box-shadow: inset 0 1px 0 rgba(255,255,255,.26);
+            }}
+
+            .stat-k {{
+                color: #5f7686;
+                font-size: 10px;
+                letter-spacing: .16em;
+                text-transform: uppercase;
+                font-family: Fira Code, Consolas, monospace;
+            }}
+
+            .stat-v {{
+                margin-top: 6px;
+                color: #173149;
+                font-size: 20px;
+                font-weight: 700;
+                letter-spacing: -.03em;
+            }}
+
+            .candle-glass {{
+                border-radius: 26px;
+                padding: 10px 10px 2px;
+                background: linear-gradient(180deg, rgba(255,255,255,.24), rgba(255,255,255,.06));
+                border: 1px solid rgba(255,255,255,.22);
+                box-shadow: inset 0 1px 0 rgba(255,255,255,.26);
+            }}
+
+            .ambient-terminal-glass {{
+                border-radius: 24px;
+                overflow: hidden;
+                background: linear-gradient(180deg, rgba(15,24,34,.96), rgba(10,18,27,.96));
+                border: 1px solid rgba(110,203,232,.12);
+                box-shadow: 0 18px 46px rgba(12,22,34,.18);
+            }}
+
+            .ambient-terminal-head {{
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 10px 14px;
+                border-bottom: 1px solid rgba(110,203,232,.10);
+                background: rgba(255,255,255,.02);
+            }}
+
+            .ambient-dot {{
+                width: 9px;
+                height: 9px;
+                border-radius: 999px;
+                display: inline-block;
+            }}
+
+            .ambient-dot.coral {{ background: #e98a6b; }}
+            .ambient-dot.peach {{ background: #edb08a; }}
+            .ambient-dot.cyan {{ background: #6ecbe8; }}
+
+            .ambient-terminal-title {{
+                margin-left: 8px;
+                color: #8fb3c1;
+                font-size: 11px;
+                letter-spacing: .16em;
+                font-family: Fira Code, Consolas, monospace;
+            }}
+
+            .ambient-terminal-body {{
+                padding: 14px;
+                display: grid;
+                gap: 4px;
+            }}
+
+            .ambient-log-line {{
+                color: #dff6ff;
+                font-size: 12px;
+                line-height: 1.55;
+                font-family: Fira Code, Consolas, monospace;
+                padding: 3px 0;
+                border-bottom: 1px solid rgba(255,255,255,.03);
+            }}
+
+            @media (max-width: 1200px) {{
+                .ambient-grid {{ grid-template-columns: 1fr; }}
+                .ambient-left {{ padding-bottom: 10px; }}
+                .ambient-right {{ padding: 0 22px 22px; }}
+                .hero-text {{ max-width: 100%; }}
+                .market-stats {{ grid-template-columns: 1fr 1fr; }}
+            }}
+        </style>
+        """
+    )
+
+def process_ui_events() -> None:
+    global stats_data, trades_data, raw_report_text, idle_message_index, last_ui_idle_emit, show_backtest_overlay
+
+    try:
+        drained = 0
+        max_logs_per_tick = 60
+        changed = False
+
+        while not pending_logs.empty() and drained < max_logs_per_tick:
+            output_log.append(str(pending_logs.get()))
+            drained += 1
+            changed = True
+
+        if len(output_log) > 2000:
+            del output_log[:-1200]
+            changed = True
+
+        if changed:
+            global last_log_time
+            last_log_time = time.time()
+            render_terminal()
+            write_ambient_state()
+    except Exception as e:
+        try:
+            output_log.append(f"[error] process_ui_events/logs: {e}")
+            render_terminal()
+        except Exception:
+            pass
+
+    try:
+        while not pending_results.empty():
+            kind, trades, stats = pending_results.get()
+
+            if kind == "backtest":
+                if stats is not None:
+                    stats_data = stats
+                    trades_data = trades
+                    show_backtest_overlay = True
+                    output_log.append("[backtest] ejecución finalizada")
+
+                    if header_status is not None:
+                        header_status.set_text("BACKTEST READY")
+
+                    try:
+                        update_results()
+                    except Exception as e:
+                        output_log.append(f"[error] update_results: {e}")
+
+                    try:
+                        raw_report_text = build_raw_report()
+                        update_raw_report_box()
+                        output_log.append("[report] reporte bruto actualizado")
+                    except Exception as e:
+                        output_log.append(f"[error] raw_report: {e}")
+
+                else:
+                    output_log.append("[backtest] sin resultados")
+                    if header_status is not None:
+                        header_status.set_text("BACKTEST ERROR")
+
+        render_terminal()
+        write_ambient_state()
+    except Exception as e:
+        try:
+            output_log.append(f"[error] process_ui_events/results: {e}")
+            render_terminal()
+        except Exception:
+            pass
+
+    now = time.time()
+
+    # 3) Todo lo demás blindado
+    try:
+        if market_watch_label is not None:
+            if news_items:
+                item = news_items[news_cursor % len(news_items)]
+                market_watch_label.set_text(item["title"])
+                if news_source_label is not None:
+                    suffix = f" · {item['timestamp']}" if item.get("timestamp") else ""
+                    news_source_label.set_text(f"{item.get('source', 'Live RSS')}{suffix}")
+            else:
+                market_watch_label.set_text(FALLBACK_WATCH_MESSAGES[int(now // 5) % len(FALLBACK_WATCH_MESSAGES)])
+                if news_source_label is not None:
+                    news_source_label.set_text("Fallback visual · esperando feed real")
+    except Exception as e:
+        append_log(f"[error] market_watch: {e}")
+
+    try:
+        if news_last_fetch_at is None or now - news_last_fetch_at > 600:
+            refresh_live_macro_news(background=True)
+        emit_live_news_to_terminal(now)
+    except Exception as e:
+        append_log(f"[error] news_loop: {e}")
+
+    try:
+        if not news_items and now - last_log_time > 8 and now - last_ui_idle_emit > 8:
+            queue_log(IDLE_MARKET_LINES[idle_message_index % len(IDLE_MARKET_LINES)])
+            idle_message_index += 1
+            last_ui_idle_emit = now
+    except Exception as e:
+        append_log(f"[error] idle_feed: {e}")
+
+    try:
+        if live_chart_box is not None and now - last_chart_refresh_at > 60:
+            refresh_live_chart(force=False)
+    except Exception as e:
+        append_log(f"[error] live_chart_timer: {e}")
+
+    try:
+        refresh_apolo_status()
+    except Exception as e:
+        append_log(f"[error] refresh_apolo_status: {e}")
+
+    try:
+        update_ml_status()
+    except Exception as e:
+        append_log(f"[error] update_ml_status: {e}")
+
+    try:
+        write_ambient_state()
+    except Exception:
+        pass
 
 # Obtener puerto desde variable de entorno de Render
 port = int(os.environ.get('PORT', 8083))
