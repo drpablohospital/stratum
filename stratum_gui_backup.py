@@ -18,7 +18,6 @@ from urllib.parse import quote_plus, urlencode
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
-
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -26,22 +25,10 @@ from nicegui import ui, app
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIGS_DIR = BASE_DIR / "configs"
-RUNTIME_DIR = BASE_DIR / "runtime"
 CONFIGS_DIR.mkdir(exist_ok=True)
-RUNTIME_DIR.mkdir(exist_ok=True)
-
-BACKTEST_SCRIPT = BASE_DIR / "stratum_bt.py"
-BACKTEST_STATUS_FILE = RUNTIME_DIR / "backtest_status.json"
-
-backtest_process = None
-backtest_started_at = None
-backtest_last_output_at = None
-last_backtest_line = None
 
 PARAMS_FILE = CONFIGS_DIR / "params_bt.json"
 DEFAULT_CONFIG_FILE = CONFIGS_DIR / "config.json"
-BACKTEST_TRADES_FILE = RUNTIME_DIR / "backtest_trades.csv"
-BACKTEST_STATS_FILE = RUNTIME_DIR / "backtest_stats.json"
 
 APOLO_PROGRESS_FILE = BASE_DIR / "optimizer_progress.txt"
 APOLO_BEST_FILE = BASE_DIR / "best_params.json"
@@ -50,13 +37,17 @@ AMBIENT_STATE_FILE = BASE_DIR / "ambient_state.json"
 LIVE_TERMINAL_FILE = BASE_DIR / "live_terminal.txt"
 
 BOT_SCRIPT = BASE_DIR / "stratum.py"
-TRAINER_SCRIPT = BASE_DIR / "sa_trainer.py"
+TRAINER_SCRIPT = BASE_DIR / "sa_trainer.py"  # script de reentrenamiento
+RUNTIME_DIR = BASE_DIR / "runtime"
+BACKTEST_TRADES_FILE = RUNTIME_DIR / "backtest_trades.csv"
+BACKTEST_STATS_FILE = RUNTIME_DIR / "backtest_stats.json"
 
+# Rutas de artefactos ML
 ML_MODEL_FILE = BASE_DIR / "btc_ml_model.pkl"
 ML_SCALER_FILE = BASE_DIR / "scaler.pkl"
 ML_FEATURES_FILE = BASE_DIR / "feature_columns.json"
 ML_MAPPING_FILE = BASE_DIR / "label_mapping.json"
-ML_METADATA_FILE = BASE_DIR / "ml_metadata.json"
+ML_METADATA_FILE = BASE_DIR / "ml_metadata.json"  # guardamos info del entrenamiento
 
 import traceback
 
@@ -90,7 +81,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "tf_entry": "5m",
     "tf_trend": "1h",
     "live_chart_tf": "15m",
-    "mode": "feature_prob",
+    "mode": "feature_prob",  # feature_prob | legacy_classic | ml_model | hybrid
     "use_1h_trend_filter": True,
     "feature_prob": {
         "ret_1_weight": 0.10,
@@ -471,6 +462,7 @@ def build_runtime_config() -> dict[str, Any]:
     risk = runtime.get("risk_engine", {})
     execution = runtime.get("execution", {})
 
+    # aliases legacy / compatibilidad con backtesters anteriores
     runtime["ema_fast_trend"] = legacy.get("ema_fast_trend")
     runtime["ema_slow_trend"] = legacy.get("ema_slow_trend")
     runtime["ema_fast_signal"] = legacy.get("ema_fast_signal")
@@ -1023,18 +1015,6 @@ async def prompt_launch_bot() -> None:
     if ok:
         launch_bot_embedded(testnet=(mode["value"] == "testnet"))
 
-def read_backtest_pipe(pipe) -> None:
-    global backtest_last_output_at, last_backtest_line
-    for raw_line in iter(pipe.readline, ""):
-        line = (raw_line or "").rstrip("\n").rstrip("\r")
-        if not line:
-            continue
-        if line == last_backtest_line:
-            continue
-        last_backtest_line = line
-        backtest_last_output_at = time.time()
-        queue_log(f"[backtest] {line}")
-    pipe.close()
 
 def run_backtest_with_logs(cfg: dict[str, Any], log_callback):
     buffer = io.StringIO()
@@ -1063,119 +1043,40 @@ def run_backtest_with_logs(cfg: dict[str, Any], log_callback):
 
 
 def start_backtest() -> None:
-    global backtest_running, backtest_process, backtest_started_at, backtest_last_output_at, last_backtest_line
+    global backtest_running
 
     if backtest_running:
         ui.notify("Ya hay un backtest en ejecución", type="warning")
         append_log("[backtest] intento ignorado: ya había un backtest corriendo")
         return
 
-    if backtest_process and backtest_process.poll() is None:
-        ui.notify("Ya existe un proceso de backtest activo", type="warning")
-        append_log("[backtest] proceso ya activo")
-        return
-
-    if not BACKTEST_SCRIPT.exists():
-        ui.notify(f"No se encontró {BACKTEST_SCRIPT.name}", type="negative")
-        append_log(f"[error] no se encontró {BACKTEST_SCRIPT.name}")
-        return
-
-    runtime_cfg = build_runtime_config()
-
-    with open(PARAMS_FILE, "w", encoding="utf-8") as f:
-        json.dump(runtime_cfg, f, indent=2, ensure_ascii=False)
-
-    if BACKTEST_STATUS_FILE.exists():
-        try:
-            BACKTEST_STATUS_FILE.unlink()
-        except Exception:
-            pass
-
     backtest_running = True
+
     if header_status is not None:
         header_status.set_text("BACKTEST RUNNING")
 
-    env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONUTF8"] = "1"
+    queue_log("[backtest] iniciando ejecución...")
 
-    cmd = [sys.executable, BACKTEST_SCRIPT.name, "--config", str(PARAMS_FILE)]
-
-    try:
-        backtest_process = subprocess.Popen(
-            cmd,
-            cwd=BASE_DIR,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-            text=True,
-            bufsize=1,
-            universal_newlines=True,
-            env=env,
-        )
-        backtest_started_at = time.time()
-        backtest_last_output_at = backtest_started_at
-        last_backtest_line = None
-
-        threading.Thread(
-            target=read_backtest_pipe,
-            args=(backtest_process.stdout,),
-            daemon=True,
-        ).start()
-
-        append_log(f"[backtest] usando python: {sys.executable}")
-        append_log(f"[backtest] lanzado como subprocess: {BACKTEST_SCRIPT.name}")
-        ui.notify("Backtest iniciado", type="positive")
-
-    except Exception as e:
-        backtest_running = False
-        if header_status is not None:
-            header_status.set_text("READY")
-        ui.notify(f"Error iniciando backtest: {e}", type="negative")
-        append_log(f"[error] start_backtest: {e}")
-
-def poll_backtest_process() -> None:
-    global backtest_running, backtest_process
-
-    if not backtest_running or backtest_process is None:
-        return
-
-    ret = backtest_process.poll()
-    if ret is None:
-        return
-
-    backtest_running = False
-
-    if header_status is not None:
-        header_status.set_text("READY" if ret == 0 else "BACKTEST ERROR")
-
-    stats = {}
-    trades = None
-
-    if BACKTEST_STATS_FILE.exists():
+    def run() -> None:
+        global backtest_running
         try:
-            with open(BACKTEST_STATS_FILE, "r", encoding="utf-8") as f:
-                stats = json.load(f)
+            runtime_cfg = build_runtime_config()
+            result = run_backtest_with_logs(runtime_cfg, queue_log)
+
+            if isinstance(result, tuple) and len(result) == 2:
+                trades, stats = result
+            else:
+                trades, stats = None, None
+
+            pending_results.put(("backtest", trades, stats))
         except Exception as e:
-            append_log(f"[error] leyendo backtest_stats.json: {e}")
+            queue_log(f"[error] backtest thread: {e}")
+            pending_results.put(("backtest", None, None))
+        finally:
+            backtest_running = False
 
-    if BACKTEST_TRADES_FILE.exists():
-        try:
-            trades = pd.read_csv(BACKTEST_TRADES_FILE)
-        except Exception as e:
-            append_log(f"[error] leyendo backtest_trades.csv: {e}")
+    threading.Thread(target=run, daemon=True).start()
 
-    pending_results.put(("backtest", trades, stats))
-
-    if ret == 0:
-        append_log("[backtest] finalizado correctamente")
-        ui.notify("Backtest terminado", type="positive")
-    else:
-        append_log(f"[error] backtest terminó con código {ret}")
-        ui.notify(f"Backtest terminó con error ({ret})", type="negative")
-
-    backtest_process = None
 
 def safe_stat(key: str, default: Any = 0) -> Any:
     if not stats_data:
@@ -1511,6 +1412,7 @@ def refresh_apolo_status(force: bool = False) -> None:
 
 # ======================== ML MODEL SECTION ========================
 def load_ml_metadata() -> dict:
+    """Carga metadatos del modelo (fecha, accuracy, etc.) si existe."""
     if ML_METADATA_FILE.exists():
         try:
             return json.loads(ML_METADATA_FILE.read_text(encoding="utf-8"))
@@ -1548,6 +1450,45 @@ def update_ml_status() -> None:
         ml_status_label.set_text("Modelo ML no encontrado")
         if ml_info_label is not None:
             ml_info_label.set_text("Modelo no encontrado. Ejecuta reentrenamiento para generarlo.")
+
+def load_last_backtest_results():
+    """Carga los resultados guardados en disco (si existen) y actualiza la interfaz."""
+    global trades_data, stats_data, raw_report_text, show_backtest_overlay
+    if BACKTEST_STATS_FILE.exists():
+        try:
+            with open(BACKTEST_STATS_FILE, "r", encoding="utf-8") as f:
+                stats_data = json.load(f)
+            # Asegurar que los valores numéricos sean float (para gráficos)
+            for k in ['total_pnl', 'avg_pnl', 'max_dd', 'tpd', 'proj_month']:
+                if k in stats_data:
+                    stats_data[k] = float(stats_data[k])
+            print("[dashboard] estadísticas cargadas desde disco")
+        except Exception as e:
+            print(f"[dashboard] error cargando stats: {e}")
+
+    if BACKTEST_TRADES_FILE.exists():
+        try:
+            trades_data = pd.read_csv(BACKTEST_TRADES_FILE)
+            if not trades_data.empty:
+                # Convertir columnas de tiempo
+                if 'entry_time' in trades_data.columns:
+                    trades_data['entry_time'] = pd.to_datetime(trades_data['entry_time'], errors='coerce')
+                if 'exit_time' in trades_data.columns:
+                    trades_data['exit_time'] = pd.to_datetime(trades_data['exit_time'], errors='coerce')
+                # Asegurar pnl_equity_pct
+                if 'pnl_pct' in trades_data.columns and 'pnl_equity_pct' not in trades_data.columns:
+                    trades_data['pnl_equity_pct'] = trades_data['pnl_pct']
+                print(f"[dashboard] trades cargados desde disco: {len(trades_data)} filas")
+        except Exception as e:
+            print(f"[dashboard] error cargando trades: {e}")
+
+    # Reconstruir el reporte bruto si hay datos
+    if stats_data is not None:
+        raw_report_text = build_raw_report()
+        update_raw_report_box()
+        show_backtest_overlay = True
+        # Actualizar gráficos
+        update_results()
 
 def read_retrain_pipe(pipe) -> None:
     global retrain_last_output_at
@@ -1591,10 +1532,14 @@ def start_retrain() -> None:
         retrain_last_output_at = retrain_started_at
         threading.Thread(target=read_retrain_pipe, args=(retrain_process.stdout,), daemon=True).start()
 
+        # Esperar a que termine para actualizar metadatos
         def wait_retrain():
             retrain_process.wait()
+            # Actualizar metadatos (podríamos extraer accuracy del log, pero por ahora solo marcamos fecha)
             try:
                 meta = {"last_train": time.strftime("%Y-%m-%d %H:%M:%S"), "test_accuracy": "desconocida"}
+                # Intenta leer accuracy desde el último log (simplificado)
+                # Podríamos parsear el log, pero dejamos simple
                 with open(ML_METADATA_FILE, "w", encoding="utf-8") as f:
                     json.dump(meta, f, indent=2)
                 append_log("[trainer] Reentrenamiento completado. Metadatos actualizados.")
@@ -1607,53 +1552,12 @@ def start_retrain() -> None:
         ui.notify(f"Error iniciando reentrenamiento: {e}", type="negative")
         append_log(f"[error] start_retrain: {e}")
 
-
-# ======================== LOAD LAST BACKTEST RESULTS ========================
-def load_last_backtest_results():
-    """Carga los resultados guardados en disco (si existen) y actualiza la interfaz."""
-    global trades_data, stats_data, raw_report_text, show_backtest_overlay
-    if BACKTEST_STATS_FILE.exists():
-        try:
-            with open(BACKTEST_STATS_FILE, "r", encoding="utf-8") as f:
-                stats_data = json.load(f)
-            # Asegurar que los valores numéricos sean float (para gráficos)
-            for k in ['total_pnl', 'avg_pnl', 'max_dd', 'tpd', 'proj_month']:
-                if k in stats_data:
-                    stats_data[k] = float(stats_data[k])
-            print("[dashboard] estadísticas cargadas desde disco")
-        except Exception as e:
-            print(f"[dashboard] error cargando stats: {e}")
-
-    if BACKTEST_TRADES_FILE.exists():
-        try:
-            trades_data = pd.read_csv(BACKTEST_TRADES_FILE)
-            if not trades_data.empty:
-                # Convertir columnas de tiempo
-                if 'entry_time' in trades_data.columns:
-                    trades_data['entry_time'] = pd.to_datetime(trades_data['entry_time'], errors='coerce')
-                if 'exit_time' in trades_data.columns:
-                    trades_data['exit_time'] = pd.to_datetime(trades_data['exit_time'], errors='coerce')
-                # Asegurar pnl_equity_pct
-                if 'pnl_pct' in trades_data.columns and 'pnl_equity_pct' not in trades_data.columns:
-                    trades_data['pnl_equity_pct'] = trades_data['pnl_pct']
-                print(f"[dashboard] trades cargados desde disco: {len(trades_data)} filas")
-        except Exception as e:
-            print(f"[dashboard] error cargando trades: {e}")
-
-    # Reconstruir el reporte bruto si hay datos
-    if stats_data is not None:
-        raw_report_text = build_raw_report()
-        update_raw_report_box()
-        show_backtest_overlay = True
-        # Actualizar gráficos
-        update_results()
-
-
 # ======================== IDLE PAGE (INTEGRADA) ========================
 @ui.page("/idle")
 def idle_page() -> None:
     """Página STRATUM Idle (monitoreo pasivo) integrada."""
-    add_styles()
+    # Reutilizar la misma paleta y estilos
+    add_styles()  # ya definida más abajo
 
     idle_state = {
         'last_terminal_line': '[idle] waiting for signal...',
@@ -1842,6 +1746,7 @@ def idle_page() -> None:
         idle_state['best_score'] = detect_best_score()
         idle_state['updated_at'] = shared.get('updated_at', time.strftime('%H:%M:%S'))
 
+        # Actualizar UI
         if hero_label:
             hero_label.set_text(idle_state['headline'])
         if signal_label:
@@ -1869,6 +1774,7 @@ def idle_page() -> None:
         if terminal_box:
             terminal_box.set_content(build_terminal_markup(idle_state['terminal_lines']))
 
+    # Construir la interfaz Idle
     with ui.column().classes('ambient-shell w-full'):
         with ui.element('div').classes('ambient-surface'):
             with ui.element('div').classes('ambient-grid'):
@@ -1910,6 +1816,7 @@ def idle_page() -> None:
                             candle_box = ui.column().classes('w-full')
                         terminal_box = ui.html(build_terminal_markup(idle_state['terminal_lines'])).classes('w-full')
 
+    # Timer de refresco
     def idle_refresh_loop():
         refresh_idle_state(hero_label, signal_label, strategy_label, meta_label,
                            apolo_label, bot_label, best_label,
@@ -1917,7 +1824,6 @@ def idle_page() -> None:
                            clock_label, terminal_box, candle_box)
         render_candles_idle(candle_box)
 
-    ui.timer(1.0, poll_backtest_process)
     ui.timer(2.0, idle_refresh_loop)
     ui.timer(30.0, lambda: render_candles_idle(candle_box))
     idle_refresh_loop()
@@ -2066,6 +1972,7 @@ def build_dashboard() -> None:
 
                             ml_info_label = ui.label("Información del modelo aparecerá aquí.").classes("section-help mt-4")
 
+                            # Mostrar detalles del modelo actual si existe
                             if ML_MODEL_FILE.exists():
                                 meta = load_ml_metadata()
                                 last_train = meta.get("last_train", "desconocida")
@@ -2118,30 +2025,6 @@ def build_dashboard() -> None:
                                 with ui.tab_panel(tab_bar):
                                     plot_bar = ui.column().classes("w-full")
 
-    # Cargar resultados de backtest existentes al iniciar
-    load_last_backtest_results()
-
-    # Timer para comprobar cambios en archivos cada 10 segundos
-    last_modified = {'stats': 0, 'trades': 0}
-    def check_files_for_changes():
-        nonlocal last_modified
-        reload_needed = False
-        if BACKTEST_STATS_FILE.exists():
-            mtime = BACKTEST_STATS_FILE.stat().st_mtime
-            if mtime != last_modified['stats']:
-                last_modified['stats'] = mtime
-                reload_needed = True
-        if BACKTEST_TRADES_FILE.exists():
-            mtime = BACKTEST_TRADES_FILE.stat().st_mtime
-            if mtime != last_modified['trades']:
-                last_modified['trades'] = mtime
-                reload_needed = True
-        if reload_needed:
-            load_last_backtest_results()
-            append_log("[dashboard] resultados recargados por cambio en archivos")
-    ui.timer(10.0, check_files_for_changes)
-
-    # Otros timers
     ui.timer(0.35, process_ui_events)
 
     append_log("[ui] STRATUM cargado correctamente")
@@ -2572,8 +2455,8 @@ def render_dogma_landing() -> None:
 
                 with ui.row().classes('landing-actions'):
                     ui.button('Más información', on_click=lambda: ui.run_javascript("document.getElementById('about-section')?.scrollIntoView({behavior:'smooth'})")).classes('btn-soft')
-                    ui.button('Disclaimer', on_click=lambda: ui.run_javascript("document.getElementById('disclaimer-section')?.scrollIntoView({behavior:'smooth'})")).classes('btn-soft')
-                    ui.button('Login / plataforma', on_click=lambda: ui.navigate.to('/login')).classes('btn-primary')
+                    ui.button('Aviso de responsabilidad', on_click=lambda: ui.run_javascript("document.getElementById('disclaimer-section')?.scrollIntoView({behavior:'smooth'})")).classes('btn-soft')
+                    ui.button('Login', on_click=lambda: ui.navigate.to('/login')).classes('btn-primary')
 
             with ui.element('div').classes('landing-hero w-full'):
                 with ui.element('div').classes('landing-card landing-copy'):
@@ -2590,9 +2473,9 @@ def render_dogma_landing() -> None:
                     ).classes('landing-body')
 
                     with ui.row().classes('landing-cta-row'):
-                        ui.button('Entrar a DOGMA Tools', on_click=lambda: ui.navigate.to('/login')).classes('btn-warm')
+                        ui.button('STRATUM', on_click=lambda: ui.navigate.to('/login')).classes('btn-warm')
                         ui.button('Quiénes somos', on_click=lambda: ui.run_javascript("document.getElementById('about-section')?.scrollIntoView({behavior:'smooth'})")).classes('btn-soft')
-                        ui.button('Avisos y alcance', on_click=lambda: ui.run_javascript("document.getElementById('disclaimer-section')?.scrollIntoView({behavior:'smooth'})")).classes('btn-soft')
+                        ui.button('Aviso de responsabilidad', on_click=lambda: ui.run_javascript("document.getElementById('disclaimer-section')?.scrollIntoView({behavior:'smooth'})")).classes('btn-soft')
 
                 with ui.element('div').classes('landing-card landing-terminal'):
                     ui.html("""
@@ -2661,8 +2544,8 @@ def render_dogma_landing() -> None:
                             'El landing está pensado como umbral de entrada: identidad, claridad institucional básica, acceso a la plataforma y futuras rutas para productos, onboarding y documentación.'
                         ).classes('landing-dark-body')
                         with ui.row().classes('landing-cta-row'):
-                            ui.button('Continuar a la plataforma', on_click=lambda: ui.navigate.to('/login')).classes('btn-soft')
-                            ui.button('Ver disclaimer', on_click=lambda: ui.run_javascript("document.getElementById('disclaimer-section')?.scrollIntoView({behavior:'smooth'})")).classes('btn-soft')
+                            ui.button('Plataforma STRATUM', on_click=lambda: ui.navigate.to('/login')).classes('btn-soft')
+                            ui.button('Aviso de responsabilidad', on_click=lambda: ui.run_javascript("document.getElementById('disclaimer-section')?.scrollIntoView({behavior:'smooth'})")).classes('btn-soft')
 
                     with ui.element('div').classes('landing-dark-right'):
                         with ui.element('div').classes('landing-core-box'):
@@ -2735,12 +2618,14 @@ def protected_page() -> None:
         return
     build_dashboard()
 
+# Inicializar sesión
 def init_user_session():
     if 'authenticated' not in app.storage.user:
         app.storage.user.update({'authenticated': False})
 
 app.on_connect(init_user_session)
 
+# Funciones auxiliares de estilos (ya definidas arriba)
 def add_styles() -> None:
     ui.add_head_html(
         f"""
@@ -3575,6 +3460,7 @@ def process_ui_events() -> None:
 
     now = time.time()
 
+    # 3) Todo lo demás blindado
     try:
         if market_watch_label is not None:
             if news_items:
@@ -3626,6 +3512,7 @@ def process_ui_events() -> None:
     except Exception:
         pass
 
+# Obtener puerto desde variable de entorno de Render
 port = int(os.environ.get('PORT', 8083))
 
 ui.run(

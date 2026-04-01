@@ -2,6 +2,10 @@
 """
 STRATUM Backtester Worker (subprocess-safe)
 Corre el backtest en un proceso separado para no congelar NiceGUI.
+Versión final con:
+- features internas alineadas con trainer_v2.py
+- features externas (sp500, nasdaq, dow, vix, nvda)
+- soporte ML/hybrid sin romper flujo de GUI
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ from typing import Callable, Tuple, Optional
 
 import numpy as np
 import pandas as pd
+import yfinance as yf
 
 warnings.filterwarnings("ignore")
 
@@ -47,12 +52,31 @@ BACKTEST_STATUS_FILE = RUNTIME_DIR / "backtest_status.json"
 ML_MODEL_FILE = BASE_DIR / "btc_ml_model.pkl"
 SCALER_FILE = BASE_DIR / "scaler.pkl"
 FEATURE_COLUMNS_FILE = BASE_DIR / "feature_columns.json"
+LABEL_MAPPING_FILE = BASE_DIR / "label_mapping.json"
 
 # Supported TFs for feature construction
 TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "1d", "1w"]
 
+# External features used in trainer_v2.py
+EXTERNAL_SYMBOLS = {
+    "sp500": "^GSPC",
+    "nasdaq": "^IXIC",
+    "dow": "^DJI",
+    "vix": "^VIX",
+    "nvda": "NVDA",
+}
+
 YEARS = 3
 BACKTEST_LOOKBACK_DAYS = 1000
+
+# =========================================================
+# Globals ML
+# =========================================================
+ML_MODEL = None
+SCALER = None
+FEATURE_COLUMNS = None
+LABEL_MAPPING = None
+_MISSING_FEATURES_LOGGED = False
 
 # =========================================================
 # Logging / status helpers
@@ -123,6 +147,33 @@ def normalize_ohlcv(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
 
     return df.sort_index()
 
+def normalize_external_df(df: pd.DataFrame, name: str) -> pd.DataFrame:
+    df = df.copy()
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = ["_".join([str(x) for x in col if str(x) != ""]).strip("_") for col in df.columns]
+
+    rename_map = {}
+    for c in df.columns:
+        lc = str(c).lower()
+        if "close" == lc or lc.endswith("_close"):
+            rename_map[c] = f"{name}_close"
+        elif "volume" == lc or lc.endswith("_volume"):
+            rename_map[c] = f"{name}_volume"
+
+    df = df.rename(columns=rename_map)
+    keep = [c for c in [f"{name}_close", f"{name}_volume"] if c in df.columns]
+    if not keep:
+        return pd.DataFrame()
+
+    df = df[keep].copy()
+    df.index = pd.to_datetime(df.index, errors="coerce")
+    df = df[~df.index.isna()].sort_index()
+
+    for c in keep:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    return df.dropna(how="all")
+
 def find_best_available_parquet(tf: str) -> Path:
     preferred = BASE_DIR / f"btc_{tf}_{YEARS}y.parquet"
     if preferred.exists():
@@ -171,35 +222,94 @@ def resample_to_base(df: pd.DataFrame, base_freq: str) -> pd.DataFrame:
     return df.resample(base_freq).ffill()
 
 # =========================================================
+# External features
+# =========================================================
+def fetch_external_data(start_date, end_date):
+    data_dict = {}
+
+    for name, ticker in EXTERNAL_SYMBOLS.items():
+        log(f"[BT] Downloading external data {name} ({ticker})...")
+        try:
+            df = yf.download(ticker, start=start_date, end=end_date, progress=False, auto_adjust=False)
+            if df is None or df.empty:
+                log(f"[BT][WARN] No external data for {ticker}")
+                continue
+
+            df = normalize_external_df(df, name)
+            if df.empty:
+                log(f"[BT][WARN] External data normalized empty for {ticker}")
+                continue
+
+            data_dict[name] = df
+
+        except Exception as e:
+            log(f"[BT][WARN] Error downloading {ticker}: {e}")
+
+    return data_dict
+
+def resample_external_to_base(external_data, base_freq):
+    aligned = []
+
+    for _, df in external_data.items():
+        try:
+            df_resampled = df.resample(base_freq).last()
+            aligned.append(df_resampled)
+        except Exception as e:
+            log(f"[BT][WARN] Error resampling external data: {e}")
+
+    if aligned:
+        out = pd.concat(aligned, axis=1).sort_index()
+        out = out.ffill()
+        out = out[~out.index.duplicated(keep="last")]
+        return out
+
+    return pd.DataFrame()
+
+# =========================================================
 # Multi-timeframe ML features
 # =========================================================
 def compute_features_tf(df: pd.DataFrame, tf_label: str) -> pd.DataFrame:
+    """
+    Debe mantenerse alineada con trainer_v2.py.
+    """
+    if df.empty or len(df) < 120:
+        return pd.DataFrame()
+
+    df = df.copy()
     features = pd.DataFrame(index=df.index, dtype="float32")
 
+    # Retornos
     features["ret_1"] = df["close"].pct_change(1).astype("float32")
     features["ret_3"] = df["close"].pct_change(3).astype("float32")
     features["ret_12"] = df["close"].pct_change(12).astype("float32")
 
+    # ATR / volatilidad
     high_low = df["high"] - df["low"]
-    high_close = np.abs(df["high"] - df["close"].shift())
-    low_close = np.abs(df["low"] - df["close"].shift())
+    high_close = np.abs(df["high"] - df["close"].shift(1))
+    low_close = np.abs(df["low"] - df["close"].shift(1))
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    atr_series = tr.rolling(14).mean()
 
+    atr_series = tr.rolling(14).mean()
     features["realized_vol"] = (atr_series / df["close"]).astype("float32")
     features["vol_ratio"] = (atr_series / atr_series.rolling(96).mean()).astype("float32")
+
+    # Rango normalizado
     features["range_pos"] = ((df["high"] - df["low"]) / df["close"]).astype("float32")
 
+    # Pendiente
     def slope_series(y):
         x = np.arange(len(y))
         return np.polyfit(x, y, 1)[0]
 
     features["slope"] = df["close"].rolling(20).apply(slope_series, raw=True).astype("float32")
-    features["slope"] = features["slope"] / df["close"].shift(1)
-    features["ema_fast"] = df["close"].ewm(span=20).mean().astype("float32")
-    features["ema_slow"] = df["close"].ewm(span=50).mean().astype("float32")
+    features["slope"] = (features["slope"] / df["close"].shift(1)).astype("float32")
+
+    # EMA / tendencia
+    features["ema_fast"] = df["close"].ewm(span=20, adjust=False).mean().astype("float32")
+    features["ema_slow"] = df["close"].ewm(span=50, adjust=False).mean().astype("float32")
     features["trend"] = ((features["ema_fast"] - features["ema_slow"]) / df["close"]).astype("float32")
 
+    # Donchian breakout
     donchian_high = df["high"].rolling(96).max()
     donchian_low = df["low"].rolling(96).min()
     features["breakout"] = np.where(
@@ -208,6 +318,30 @@ def compute_features_tf(df: pd.DataFrame, tf_label: str) -> pd.DataFrame:
         np.where(df["close"] < donchian_low.shift(1), -1, 0),
     ).astype("int8")
 
+    # RSI
+    delta = df["close"].diff()
+    gain = delta.clip(lower=0)
+    loss = (-delta).clip(lower=0)
+    avg_gain = gain.rolling(14).mean()
+    avg_loss = loss.rolling(14).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    features["rsi"] = (100 - 100 / (1 + rs)).fillna(50).astype("float32")
+
+    # MACD
+    ema12 = df["close"].ewm(span=12, adjust=False).mean()
+    ema26 = df["close"].ewm(span=26, adjust=False).mean()
+    features["macd"] = (ema12 - ema26).astype("float32")
+    features["macd_signal"] = features["macd"].ewm(span=9, adjust=False).mean().astype("float32")
+    features["macd_hist"] = (features["macd"] - features["macd_signal"]).astype("float32")
+
+    # Bollinger
+    sma20 = df["close"].rolling(20).mean()
+    std20 = df["close"].rolling(20).std()
+    features["bb_upper"] = (sma20 + 2 * std20).astype("float32")
+    features["bb_lower"] = (sma20 - 2 * std20).astype("float32")
+    features["bb_width"] = ((features["bb_upper"] - features["bb_lower"]) / sma20).astype("float32")
+
+    features.replace([np.inf, -np.inf], np.nan, inplace=True)
     features = features.add_prefix(f"{tf_label}_")
     features = features.dropna()
     features.index = pd.to_datetime(features.index, errors="coerce")
@@ -239,9 +373,31 @@ def build_multi_tf_features(base_freq: str = "1h") -> pd.DataFrame:
             log(f"[WARN] Failed to process {tf}: {e}")
             continue
 
+    # External features
+    try:
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=BACKTEST_LOOKBACK_DAYS + 30)
+        external_raw = fetch_external_data(start_date, end_date)
+        external_feats = resample_external_to_base(external_raw, base_freq)
+
+        if not external_feats.empty:
+            log(f"[BT] External features shape: {external_feats.shape}")
+            if all_feats is None:
+                all_feats = external_feats
+            else:
+                all_feats = all_feats.join(external_feats, how="outer")
+        else:
+            log("[BT][WARN] External features are empty")
+    except Exception as e:
+        log(f"[BT][WARN] Failed to build external features: {e}")
+
     if all_feats is None:
         return pd.DataFrame()
 
+    all_feats = all_feats.sort_index()
+    all_feats = all_feats.ffill()
+    all_feats.replace([np.inf, -np.inf], np.nan, inplace=True)
+    all_feats = all_feats.dropna()
     all_feats = all_feats[~all_feats.index.duplicated(keep="last")]
     return all_feats
 
@@ -413,12 +569,8 @@ def legacy_signal_at_idx(df: pd.DataFrame, idx: int, cfg: dict) -> Optional[str]
 # =========================================================
 # ML model
 # =========================================================
-ML_MODEL = None
-SCALER = None
-FEATURE_COLUMNS = None
-
 def load_ml_model() -> bool:
-    global ML_MODEL, SCALER, FEATURE_COLUMNS
+    global ML_MODEL, SCALER, FEATURE_COLUMNS, LABEL_MAPPING
     try:
         with open(ML_MODEL_FILE, "rb") as f:
             ML_MODEL = pickle.load(f)
@@ -430,26 +582,41 @@ def load_ml_model() -> bool:
         if not isinstance(FEATURE_COLUMNS, list):
             raise TypeError(f"feature_columns.json must contain a list, got {type(FEATURE_COLUMNS)}")
 
-        log("[BT] ML model loaded successfully")
+        if LABEL_MAPPING_FILE.exists():
+            with open(LABEL_MAPPING_FILE, "r", encoding="utf-8") as f:
+                raw_map = json.load(f)
+            LABEL_MAPPING = {int(k): int(v) for k, v in raw_map.items()}
+        else:
+            LABEL_MAPPING = {-1: 0, 0: 1, 1: 2}
+
+        log(f"[BT] ML model loaded successfully ({len(FEATURE_COLUMNS)} expected features)")
         return True
     except Exception as e:
         log(f"[BT] Error loading ML model: {e}")
         return False
 
 def ml_signal(features_row: pd.Series) -> Optional[int]:
+    global _MISSING_FEATURES_LOGGED
+
     if ML_MODEL is None or SCALER is None or FEATURE_COLUMNS is None:
         return None
+
     try:
         missing = [c for c in FEATURE_COLUMNS if c not in features_row.index]
         if missing:
-            log(f"[BT] Missing ML features: {missing[:10]}{'...' if len(missing) > 10 else ''}")
+            if not _MISSING_FEATURES_LOGGED:
+                log(f"[BT] Missing ML features: {missing[:10]}{'...' if len(missing) > 10 else ''}")
+                _MISSING_FEATURES_LOGGED = True
             return None
 
         X = features_row[FEATURE_COLUMNS].values.reshape(1, -1)
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         X_scaled = SCALER.transform(X)
         pred_class = ML_MODEL.predict(X_scaled)[0]
-        mapping = {0: -1, 1: 0, 2: 1}
-        return mapping[pred_class]
+
+        inv_map = {0: -1, 1: 0, 2: 1}
+        return inv_map.get(int(pred_class), 0)
+
     except Exception as e:
         log(f"[BT] ML prediction error: {e}")
         return None
@@ -510,6 +677,16 @@ def run_backtest(cfg: dict, progress_callback: Callable = None) -> Tuple[pd.Data
 
         full_features, df_signal = align_features_to_signal(full_features, df_signal)
         log(f"[BT] Aligned rows: features={len(full_features)} signal={len(df_signal)}")
+
+        if FEATURE_COLUMNS is not None:
+            available = set(full_features.columns)
+            expected = set(FEATURE_COLUMNS)
+            missing = sorted(expected - available)
+            if missing:
+                log(f"[BT] Feature coverage mismatch: have {len(available)} / need {len(expected)}")
+                log(f"[BT] Still missing after rebuild: {missing[:10]}{'...' if len(missing) > 10 else ''}")
+            else:
+                log(f"[BT] Feature coverage OK: {len(available)} / {len(expected)}")
 
         if full_features.empty or df_signal.empty:
             log("[BT] No overlapping rows after alignment")

@@ -1,200 +1,90 @@
-[news] Keep it secret: The dollar’s not safe - euractiv.com · 2026-03-20 07:00
-[news] Artificial Intelligence Challenges and Opportunities - - Political Science Now · 2026-03-31 19:54
-[news] Montana State symposium explores possibilities of artificial intelligence - Montana State University · 2026-03-31 15:53
-[news] Colombia central bank raises rates to 11.25%, government withdraws from board - Reuters · 2026-03-31 21:57
-[news] Fed Communications and Inflation Expectations - Federal Reserve Bank of San Francisco · 2026-03-31 17:00
-[news] Foreign central bank holdings of Treasuries at the NY Fed at the lowest level since 2012 (TLT:NASDAQ) - Seeking Alpha · 2026-03-31 17:32
-[news] Trump Fed pick Kevin Warsh could shake up the central bank with his ‘family fight’ model - The Conversation · 2026-03-31 12:43
-[news] Geopolitical Risk - KPMG · 2026-04-01 01:50
-[news] As US Dollar Index Breaks the 100 Mark, the Global Economy Faces a New Stress Test - Investing.com · 2026-03-30 10:47
-[news] Gold holds firm as yields ease, US Dollar strength caps gains - fxstreet.com · 2026-03-30 15:40
+[ui] STRATUM cargado correctamente
+[dashboard] resultados recargados por cambio en archivos
 [news] feed actualizado con 12 titulares macro / energía / geopolítica
-[news] Gold futures fell as U.S. Treasury yields and dollar recovered. - CME Group · 2026-03-25 02:13
-[news] Gold Price Rebounds Strongly to $4,700 Mark. But March Still Records Significant Pullback - TradingKey · 2026-04-01 02:07
-[news] Keep it secret: The dollar’s not safe - Euractiv · 2026-03-20 07:00
-[news] Artificial Intelligence Challenges and Opportunities - - Political Science Now · 2026-03-31 19:54
-[news] Montana State symposium explores possibilities of artificial intelligence - Montana State University · 2026-03-31 15:53
 [news] Colombia central bank raises rates to 11.25%, government withdraws from board - Reuters · 2026-03-31 21:57
-[news] Fed Communications and Inflation Expectations - Federal Reserve Bank of San Francisco · 2026-03-31 17:00
-[news] Foreign central bank holdings of Treasuries at the NY Fed at the lowest level since 2012 (TLT:NASDAQ) - Seeking Alpha · 2026-03-31 17:32
-[news] Trump Fed pick Kevin Warsh could shake up the central bank with his ‘family fight’ model - The Conversation · 2026-03-31 12:43
-[news] Geopolitical Risk - KPMG · 2026-04-01 01:50
-[news] As US Dollar Index Breaks the 100 Mark, the Global Economy Faces a New Stress Test - Investing.com · 2026-03-30 10:47
-[news] Gold holds firm as yields ease, US Dollar strength caps gains - fxstreet.com · 2026-03-30 15:40
-[news] Gold futures fell as U.S. Treasury yields and dollar recovered. - CME Group · 2026-03-25 02:13
-[news] Gold Price Rebounds Strongly to $4,700 Mark. But March Still Records Significant Pullback - TradingKey · 2026-04-01 02:07
-[news] Keep it secret: The dollar’s not safe - Euractiv · 2026-03-20 07:00
-[news] Artificial Intelligence Challenges and Opportunities - - Political Science Now · 2026-03-31 19:54
-[news] Montana State symposium explores possibilities of artificial intelligence - Montana State University · 2026-03-31 15:53
-[news] Colombia central bank raises rates to 11.25%, government withdraws from board - Reuters · 2026-03-31 21:57
-[news] Fed Communications and Inflation Expectations - Federal Reserve Bank of San Francisco · 2026-03-31 17:00
-[news] Foreign central bank holdings of Treasuries at the NY Fed at the lowest level since 2012 (TLT:NASDAQ) - Seeking Alpha · 2026-03-31 17:32
-[news] Trump Fed pick Kevin Warsh could shake up the central bank with his ‘family fight’ model - The Conversation · 2026-03-31 12:43
-[news] Geopolitical Risk - KPMG · 2026-04-01 01:50
-[news] As US Dollar Index Breaks the 100 Mark, the Global Economy Faces a New Stress Test - Investing.com · 2026-03-30 10:47
-[news] Gold holds firm as yields ease, US Dollar strength caps gains - fxstreet.com · 2026-03-30 15:40
-[news] feed actualizado con 12 titulares macro / energía / geopolítica
-[news] Gold holds firm as yields ease, US Dollar strength caps gains - fxstreet.com · 2026-03-30 15:40
-[news] Gold Price Rebounds Strongly to $4,700 Mark. But March Still Records Significant Pullback - TradingKey · 2026-04-01 02:07
-[news] Solid losses for gold, silver on firmer USDX, rising bond yields - kitco.com · 2026-03-26 12:39
-[news] Artificial Intelligence Challenges and Opportunities - - Political Science Now · 2026-03-31 19:54
-[news] Montana State symposium explores possibilities of artificial intelligence - montana.edu · 2026-03-31 15:53
-[news] Colombia central bank raises rates to 11.25%, government withdraws from board - Reuters · 2026-03-31 21:57
-[news] Fed Communications and Inflation Expectations - Federal Reserve Bank of San Francisco · 2026-03-31 17:00
-[news] Foreign central bank holdings of Treasuries at the NY Fed at the lowest level since 2012 (TLT:NASDAQ) - Seeking Alpha · 2026-03-31 17:32
-[news] Trump Fed pick Kevin Warsh could shake up the central bank with his ‘family fight’ model - The Conversation · 2026-03-31 12:43
-[news] Geopolitical Risk - KPMG · 2026-04-01 01:50
-[news] As US Dollar Index Breaks the 100 Mark, the Global Economy Faces a New Stress Test - Investing.com · 2026-03-30 10:47
-[news] Gold futures fell as U.S. Treasury yields and dollar recovered. - CME Group · 2026-03-25 02:13
-[news] Gold holds firm as yields ease, US Dollar strength caps gains - fxstreet.com · 2026-03-30 15:40
-[news] Gold Price Rebounds Strongly to $4,700 Mark. But March Still Records Significant Pullback - TradingKey · 2026-04-01 02:07
-[news] Solid losses for gold, silver on firmer USDX, rising bond yields - kitco.com · 2026-03-26 12:39
-[news] Artificial Intelligence Challenges and Opportunities - - Political Science Now · 2026-03-31 19:54
-[news] Montana State symposium explores possibilities of artificial intelligence - montana.edu · 2026-03-31 15:53
-[news] Colombia central bank raises rates to 11.25%, government withdraws from board - Reuters · 2026-03-31 21:57
-[news] Fed Communications and Inflation Expectations - Federal Reserve Bank of San Francisco · 2026-03-31 17:00
-[news] Foreign central bank holdings of Treasuries at the NY Fed at the lowest level since 2012 (TLT:NASDAQ) - Seeking Alpha · 2026-03-31 17:32
-[news] Trump Fed pick Kevin Warsh could shake up the central bank with his ‘family fight’ model - The Conversation · 2026-03-31 12:43
-[news] Geopolitical Risk - KPMG · 2026-04-01 01:50
-[news] As US Dollar Index Breaks the 100 Mark, the Global Economy Faces a New Stress Test - Investing.com · 2026-03-30 10:47
-[news] Gold futures fell as U.S. Treasury yields and dollar recovered. - CME Group · 2026-03-25 02:13
-[news] feed actualizado con 12 titulares macro / energía / geopolítica
-[news] Gold futures fell as U.S. Treasury yields and dollar recovered. - CME Group · 2026-03-25 02:13
-[news] Gold Price Rebounds Strongly to $4,700 Mark. But March Still Records Significant Pullback - TradingKey · 2026-04-01 02:07
-[news] Keep it secret: The dollar’s not safe - Euractiv · 2026-03-20 07:00
-[news] Artificial Intelligence Challenges and Opportunities - - Political Science Now · 2026-03-31 19:54
-[news] Montana State symposium explores possibilities of artificial intelligence - montana.edu · 2026-03-31 15:53
-[news] Colombia central bank raises rates to 11.25%, government withdraws from board - Reuters · 2026-03-31 21:57
-[news] Fed Communications and Inflation Expectations - Federal Reserve Bank of San Francisco · 2026-03-31 17:00
 [ui] STRATUM cargado correctamente
 [news] feed actualizado con 12 titulares macro / energía / geopolítica
-[news] Foreign central bank holdings of Treasuries at the NY Fed at the lowest level since 2012 (TLT:NASDAQ) - Seeking Alpha · 2026-03-31 17:32
-[news] Trump Fed pick Kevin Warsh could shake up the central bank with his ‘family fight’ model - The Conversation · 2026-03-31 12:43
-[news] RBI’s FX Curbs Jolt Indian Bonds, Bank Stocks, Offshore Dollar Market - Bloomberg.com · 2026-04-01 02:54
-[news] As US Dollar Index Breaks the 100 Mark, the Global Economy Faces a New Stress Test - Investing.com · 2026-03-30 10:47
-[news] Gold holds firm as yields ease, US Dollar strength caps gains - fxstreet.com · 2026-03-30 15:40
-[news] Gold futures fell as U.S. Treasury yields and dollar recovered. - CME Group · 2026-03-25 02:13
-[news] Gold Price Rebounds Strongly to $4,700 Mark. But March Still Records Significant Pullback - TradingKey · 2026-04-01 02:07
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[news] Keep it secret: The dollar’s not safe - Euractiv · 2026-03-20 07:00
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[error] live chart: The client this element belongs to has been deleted.
-[ui] STRATUM cargado correctamente
-[news] feed actualizado con 12 titulares macro / energía / geopolítica
-[news] Artificial Intelligence Challenges and Opportunities - - Political Science Now · 2026-03-31 19:54
-[news] Montana State symposium explores possibilities of artificial intelligence - montana.edu · 2026-03-31 15:53
-[news] Colombia central bank raises rates to 11.25%, government withdraws from board - Reuters · 2026-03-31 21:57
+[dashboard] resultados recargados por cambio en archivos
+[config] estrategia cargada desde 200-fo.json
 [news] Fed Communications and Inflation Expectations - Federal Reserve Bank of San Francisco · 2026-03-31 17:00
+[backtest] usando python: C:\Users\xiute\Desktop\stratum\venv\Scripts\python.exe
+[backtest] lanzado como subprocess: stratum_bt.py
+[backtest] [BT] Config loaded from C:\Users\xiute\Desktop\stratum\configs\params_bt.json
+[backtest] [BT] Starting backtest in mode: feature_prob
+[backtest] [BT] Lookback: last 1000 days
+[backtest] [BT] Requested btc_15m_3y.parquet not found, using fallback btc_15m_2017_2026y.parquet
+[backtest] [BT] Precomputing heuristic features...
+[backtest] [BT] Precomputing ATR...
+[backtest] [BT] Processing row 5000/96001 (5.21%)
+[backtest] [BT] Processing row 10000/96001 (10.42%)
+[backtest] [BT] Processing row 15000/96001 (15.62%)
+[backtest] [BT] Processing row 20000/96001 (20.83%)
+[backtest] [BT] Processing row 25000/96001 (26.04%)
+[backtest] [BT] Processing row 30000/96001 (31.25%)
+[backtest] [BT] Processing row 35000/96001 (36.46%)
+[backtest] [BT] Processing row 40000/96001 (41.67%)
+[backtest] [BT] Processing row 45000/96001 (46.87%)
+[backtest] [BT] Processing row 50000/96001 (52.08%)
+[backtest] [BT] Processing row 55000/96001 (57.29%)
+[backtest] [BT] Processing row 60000/96001 (62.5%)
+[backtest] [BT] Processing row 65000/96001 (67.71%)
+[backtest] [BT] Processing row 70000/96001 (72.92%)
+[backtest] [BT] Processing row 75000/96001 (78.12%)
+[backtest] [BT] Processing row 80000/96001 (83.33%)
+[backtest] [BT] Processing row 85000/96001 (88.54%)
+[backtest] [BT] Processing row 90000/96001 (93.75%)
+[backtest] [BT] Processing row 95000/96001 (98.96%)
+[backtest] [BT] Finished in 17.25s
+[backtest] [BT] Trades: 4267
+[backtest] [BT] Stats: {'trades': 4267, 'winrate': 38.668853995781575, 'total_pnl': np.float64(210.9204793635105), 'avg_pnl': np.float64(0.049430625583199085), 'profit_factor': np.float64(1.249596493262512), 'max_dd': np.float64(-1.5117833086130255), 'tpd': 4.272117640924024, 'proj_month': np.float64(6.3352034266768555), 'exit_counts': {'SL': 2969, 'TP': 806, 'TIME': 492}, 'lookback_days': 1000}
+[dashboard] resultados recargados por cambio en archivos
 [news] Foreign central bank holdings of Treasuries at the NY Fed at the lowest level since 2012 (TLT:NASDAQ) - Seeking Alpha · 2026-03-31 17:32
-[news] Trump Fed pick Kevin Warsh could shake up the central bank with his ‘family fight’ model - The Conversation · 2026-03-31 12:43
-[news] RBI’s FX Curbs Jolt Indian Bonds, Bank Stocks, Offshore Dollar Market - Bloomberg.com · 2026-04-01 02:54
-[news] As US Dollar Index Breaks the 100 Mark, the Global Economy Faces a New Stress Test - Investing.com · 2026-03-30 10:47
-[news] Gold holds firm as yields ease, US Dollar strength caps gains - fxstreet.com · 2026-03-30 15:40
-[news] Gold futures fell as U.S. Treasury yields and dollar recovered. - CME Group · 2026-03-25 02:13
-[news] Gold Price Rebounds Strongly to $4,700 Mark. But March Still Records Significant Pullback - TradingKey · 2026-04-01 02:07
-[news] Keep it secret: The dollar’s not safe - Euractiv · 2026-03-20 07:00
-[news] Artificial Intelligence Challenges and Opportunities - - Political Science Now · 2026-03-31 19:54
-[news] Montana State symposium explores possibilities of artificial intelligence - montana.edu · 2026-03-31 15:53
-[news] Colombia central bank raises rates to 11.25%, government withdraws from board - Reuters · 2026-03-31 21:57
-[news] Fed Communications and Inflation Expectations - Federal Reserve Bank of San Francisco · 2026-03-31 17:00
-[news] Foreign central bank holdings of Treasuries at the NY Fed at the lowest level since 2012 (TLT:NASDAQ) - Seeking Alpha · 2026-03-31 17:32
-[news] Trump Fed pick Kevin Warsh could shake up the central bank with his ‘family fight’ model - The Conversation · 2026-03-31 12:43
-[news] RBI’s FX Curbs Jolt Indian Bonds, Bank Stocks, Offshore Dollar Market - Bloomberg.com · 2026-04-01 02:54
-[news] As US Dollar Index Breaks the 100 Mark, the Global Economy Faces a New Stress Test - Investing.com · 2026-03-30 10:47
-[news] Gold holds firm as yields ease, US Dollar strength caps gains - fxstreet.com · 2026-03-30 15:40
-[news] Gold futures fell as U.S. Treasury yields and dollar recovered. - CME Group · 2026-03-25 02:13
-[news] Gold Price Rebounds Strongly to $4,700 Mark. But March Still Records Significant Pullback - TradingKey · 2026-04-01 02:07
-[news] Keep it secret: The dollar’s not safe - Euractiv · 2026-03-20 07:00
-[news] feed actualizado con 12 titulares macro / energía / geopolítica
-[news] Artificial Intelligence Challenges and Opportunities - - Political Science Now · 2026-03-31 19:54
-[news] Montana State symposium explores possibilities of artificial intelligence - montana.edu · 2026-03-31 15:53
-[news] Colombia central bank raises rates to 11.25%, government withdraws from board - Reuters · 2026-03-31 21:57
-[news] Fed Communications and Inflation Expectations - Federal Reserve Bank of San Francisco · 2026-03-31 17:00
-[news] Foreign central bank holdings of Treasuries at the NY Fed at the lowest level since 2012 (TLT:NASDAQ) - Seeking Alpha · 2026-03-31 17:32
-[news] Trump Fed pick Kevin Warsh could shake up the central bank with his ‘family fight’ model - The Conversation · 2026-03-31 12:43
-[news] RBI’s FX Curbs Jolt Indian Bonds, Bank Stocks, Offshore Dollar Market - Bloomberg.com · 2026-04-01 02:54
-[news] As US Dollar Index Breaks the 100 Mark, the Global Economy Faces a New Stress Test - Investing.com · 2026-03-30 10:47
-[news] Gold futures fell as U.S. Treasury yields and dollar recovered. - CME Group · 2026-03-25 02:13
-[news] Gold holds firm as yields ease, US Dollar strength caps gains - fxstreet.com · 2026-03-30 15:40
-[news] Gold Price Rebounds Strongly to $4,700 Mark. But March Still Records Significant Pullback - TradingKey · 2026-04-01 02:07
-[news] Solid losses for gold, silver on firmer USDX, rising bond yields - kitco.com · 2026-03-26 12:39
-[news] Artificial Intelligence Challenges and Opportunities - - Political Science Now · 2026-03-31 19:54
-[news] Montana State symposium explores possibilities of artificial intelligence - montana.edu · 2026-03-31 15:53
-[news] Colombia central bank raises rates to 11.25%, government withdraws from board - Reuters · 2026-03-31 21:57
-[news] Fed Communications and Inflation Expectations - Federal Reserve Bank of San Francisco · 2026-03-31 17:00
-[news] Foreign central bank holdings of Treasuries at the NY Fed at the lowest level since 2012 (TLT:NASDAQ) - Seeking Alpha · 2026-03-31 17:32
-[news] Trump Fed pick Kevin Warsh could shake up the central bank with his ‘family fight’ model - The Conversation · 2026-03-31 12:43
-[news] RBI’s FX Curbs Jolt Indian Bonds, Bank Stocks, Offshore Dollar Market - Bloomberg.com · 2026-04-01 02:54
-[news] As US Dollar Index Breaks the 100 Mark, the Global Economy Faces a New Stress Test - Investing.com · 2026-03-30 10:47
-[news] Gold futures fell as U.S. Treasury yields and dollar recovered. - CME Group · 2026-03-25 02:13
-[news] Gold holds firm as yields ease, US Dollar strength caps gains - fxstreet.com · 2026-03-30 15:40
-[news] Gold Price Rebounds Strongly to $4,700 Mark. But March Still Records Significant Pullback - TradingKey · 2026-04-01 02:07
-[news] feed actualizado con 12 titulares macro / energía / geopolítica
-[news] Keep it secret: The dollar’s not safe - euractiv.com · 2026-03-20 07:00
-[news] Artificial Intelligence Challenges and Opportunities - - Political Science Now · 2026-03-31 19:54
-[news] Montana State symposium explores possibilities of artificial intelligence - montana.edu · 2026-03-31 15:53
-[news] Colombia central bank raises rates to 11.25%, government withdraws from board - Reuters · 2026-03-31 21:57
-[news] Fed Communications and Inflation Expectations - Federal Reserve Bank of San Francisco · 2026-03-31 17:00
-[news] Foreign central bank holdings of Treasuries at the NY Fed at the lowest level since 2012 (TLT:NASDAQ) - Seeking Alpha · 2026-03-31 17:32
-[news] Trump Fed pick Kevin Warsh could shake up the central bank with his ‘family fight’ model - The Conversation · 2026-03-31 12:43
-[news] RBI’s FX Curbs Jolt Indian Bonds, Bank Stocks, Offshore Dollar Market - Bloomberg.com · 2026-04-01 02:54
-[news] As US Dollar Index Breaks the 100 Mark, the Global Economy Faces a New Stress Test - Investing.com · 2026-03-30 10:47
-[news] Gold holds firm as yields ease, US Dollar strength caps gains - fxstreet.com · 2026-03-30 15:40
-[ui] STRATUM cargado correctamente
-[news] Gold futures fell as U.S. Treasury yields and dollar recovered. - CME Group · 2026-03-25 02:13
-[news] feed actualizado con 12 titulares macro / energía / geopolítica
-[news] Gold Price Rebounds Strongly to $4,700 Mark. But March Still Records Significant Pullback - TradingKey · 2026-04-01 02:07
-[ui] STRATUM cargado correctamente
-[news] feed actualizado con 12 titulares macro / energía / geopolítica
-[news] Keep it secret: The dollar’s not safe - Euractiv · 2026-03-20 07:00
-[ui] STRATUM cargado correctamente
-[news] Artificial Intelligence Challenges and Opportunities - - Political Science Now · 2026-03-31 19:54
-[news] feed actualizado con 12 titulares macro / energía / geopolítica
+[dashboard] resultados recargados por cambio en archivos
 [apolo] usando python: C:\Users\xiute\Desktop\stratum\venv\Scripts\python.exe
 [apolo] cwd: C:\Users\xiute\Desktop\stratum
 [apolo] iniciado con comando: C:\Users\xiute\Desktop\stratum\venv\Scripts\python.exe apolo.py --trials 500 --jobs 4 --resume
+[news] Trump Fed pick Kevin Warsh could shake up the central bank with his ‘family fight’ model - The Conversation · 2026-03-31 12:43
 [apolo] [APOLO] Inicio | sklearn=ON | jobs=4 | trials=500 | batch=8
 [apolo] [APOLO] Dataset cache reutilizado: btcusdt_5m_180d.csv
 [apolo] [APOLO] Dataset cache reutilizado: btcusdt_15m_240d.csv
 [apolo] [APOLO] Dataset cache reutilizado: btcusdt_1h_365d.csv
 [apolo] [APOLO] Reanudando desde 500 resultados previos
 [apolo] [APOLO] Mejor score previo: 5.7236
-[apolo] [APOLO] Optimización completada.
+[apolo] [APOLO] OptimizaciÃ³n completada.
 [apolo] [APOLO] Mejor score: 5.7236
 [apolo] [APOLO] Mejor modo: feature_prob
-[apolo] [APOLO] Mejores parámetros guardados en best_params.json
-[news] Montana State symposium explores possibilities of artificial intelligence - montana.edu · 2026-03-31 15:53
-[news] Colombia central bank raises rates to 11.25%, government withdraws from board - Reuters · 2026-03-31 21:57
-[news] Fed Communications and Inflation Expectations - Federal Reserve Bank of San Francisco · 2026-03-31 17:00
-[news] Foreign central bank holdings of Treasuries at the NY Fed at the lowest level since 2012 (TLT:NASDAQ) - Seeking Alpha · 2026-03-31 17:32
-[news] Trump Fed pick Kevin Warsh could shake up the central bank with his ‘family fight’ model - The Conversation · 2026-03-31 12:43
-[news] RBI’s FX Curbs Jolt Indian Bonds, Bank Stocks, Offshore Dollar Market - Bloomberg.com · 2026-04-01 04:18
+[apolo] [APOLO] Mejores parÃ¡metros guardados en best_params.json
+[news] Europe’s Central Banks Undecided on Need for Rate Rises - WSJ · 2026-04-01 06:35
 [news] As US Dollar Index Breaks the 100 Mark, the Global Economy Faces a New Stress Test - Investing.com · 2026-03-30 10:47
-[news] Gold holds firm as yields ease, US Dollar strength caps gains - fxstreet.com · 2026-03-30 15:40
 [news] Gold futures fell as U.S. Treasury yields and dollar recovered. - CME Group · 2026-03-25 02:13
-[news] Gold Price Rebounds Strongly to $4,700 Mark. But March Still Records Significant Pullback - TradingKey · 2026-04-01 02:07
+[news] Gold holds firm as yields ease, US Dollar strength caps gains - FXStreet · 2026-03-30 15:40
+[news] 'This is sell America' — U.S. dollar, Treasury prices tumble and gold spikes as globe flees U.S. assets - CNBC · 2026-01-20 08:00
 [news] Keep it secret: The dollar’s not safe - Euractiv · 2026-03-20 07:00
-[news] Artificial Intelligence Challenges and Opportunities - - Political Science Now · 2026-03-31 19:54
-[news] Montana State symposium explores possibilities of artificial intelligence - montana.edu · 2026-03-31 15:53
+[news] Artificial Intelligence Challenges and Opportunities - - politicalsciencenow.com · 2026-03-31 19:54
+[news] Better Artificial Intelligence Stock: Palantir vs. Oracle - The Motley Fool · 2026-04-01 04:00
+[bot] usando python: C:\Users\xiute\Desktop\stratum\venv\Scripts\python.exe
+[bot] iniciado en LIVE con configuración actual de la interfaz
+[bot] [ORACLE] Token: 87391...
+[bot] [ORACLE] Chat ID: -1003369182349
+[bot] [ORACLE] Telegram/Oracle importado correctamente
+[bot] [BOT] ==================================================
+[bot] [BOT] iniciado | env=LIVE | exchange=BYBIT | symbol=BTC/USDT:USDT | mode=feature_prob | tf_signal=15m | tf_confirm=5m | tf_trend=1h
+[bot] [BOT] config source=params_bt.json
+[bot] [BOT] leverage=5.0x | risk_per_trade_pct=0.5000% | cooldown=180m | max_hold=360m
+[bot] [BOT] risk engine | SLxATR=1.2000 | TPxATR=2.8000 | BE_R=1.0000 | TRAIL_R=1.5000 | TRAIL_VOL=1.0000
+[bot] [BOT] execution | fees_enabled=True | fee_rt=0.001 | slip_rt=0.0001
+[bot] [BOT] files | config=OK | params_bt=OK | state=OK | trades_csv=OK
+[bot] [BOT] ML files | model=OK | scaler=OK | features=OK | metadata=OK | status=N/A
+[bot] [BOT] wallet | equity_usdt=99.97
+[bot] [BOT] expected | rr=2.3333 | est_tp_pnl_pct=1.1656%
+[bot] [BOT] feature_prob | long_th=0.5800 | short_th=0.5800 | persistence=2
+[bot] [BOT] ==================================================
 [news] Colombia central bank raises rates to 11.25%, government withdraws from board - Reuters · 2026-03-31 21:57
+[backtest] finalizado correctamente
+[backtest] ejecución finalizada
+[report] reporte bruto actualizado
+[ui] STRATUM cargado correctamente
+[dashboard] resultados recargados por cambio en archivos
+[news] feed actualizado con 12 titulares macro / energía / geopolítica
+[bot] intento de inicio ignorado: ya estaba en ejecución
 [news] Fed Communications and Inflation Expectations - Federal Reserve Bank of San Francisco · 2026-03-31 17:00

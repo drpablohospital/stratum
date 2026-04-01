@@ -8,7 +8,7 @@
   "tf_entry": "5m",
   "tf_trend": "1h",
   "live_chart_tf": "15m",
-  "mode": "hybrid",
+  "mode": "feature_prob",
   "use_1h_trend_filter": true,
   "feature_prob": {
     "ret_1_weight": 0.1,
@@ -64,7 +64,7 @@
     "trail_start_R": 1.5,
     "trail_atr_mult": 1.0
   },
-  "signal_engine": "hybrid",
+  "signal_engine": "feature_prob",
   "ema_fast_trend": 50,
   "ema_slow_trend": 200,
   "ema_fast_signal": 50,

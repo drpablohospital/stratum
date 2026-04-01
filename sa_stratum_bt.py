@@ -1,20 +1,15 @@
 #!/usr/bin/env python3
 """
-STRATUM Backtester Worker (subprocess-safe)
-Corre el backtest en un proceso separado para no congelar NiceGUI.
+STRATUM Backtester (BTC/USDT) - Hybrid / ML / Heuristic / Legacy
+Optimized with precomputed features for high performance.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
-import os
 import pickle
-import sys
-import time
-import traceback
 import warnings
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Callable, Tuple, Optional
 
@@ -23,25 +18,18 @@ import pandas as pd
 
 warnings.filterwarnings("ignore")
 
-try:
-    sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
-
 # =========================================================
 # Paths and config
 # =========================================================
 BASE_DIR = Path(__file__).resolve().parent
 RUNTIME_DIR = BASE_DIR / "runtime"
 CONFIGS_DIR = BASE_DIR / "configs"
-
 RUNTIME_DIR.mkdir(exist_ok=True)
 CONFIGS_DIR.mkdir(exist_ok=True)
 
 PARAMS_FILE = CONFIGS_DIR / "params_bt.json"
 BACKTEST_TRADES_FILE = RUNTIME_DIR / "backtest_trades.csv"
 BACKTEST_STATS_FILE = RUNTIME_DIR / "backtest_stats.json"
-BACKTEST_STATUS_FILE = RUNTIME_DIR / "backtest_status.json"
 
 # ML artifacts
 ML_MODEL_FILE = BASE_DIR / "btc_ml_model.pkl"
@@ -51,39 +39,25 @@ FEATURE_COLUMNS_FILE = BASE_DIR / "feature_columns.json"
 # Supported TFs for feature construction
 TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "1d", "1w"]
 
+# This value is only used as a preferred filename pattern.
+# If it doesn't exist, the loader will fallback automatically.
 YEARS = 3
+
+# Backtest only the most recent year
 BACKTEST_LOOKBACK_DAYS = 1000
-
-# =========================================================
-# Logging / status helpers
-# =========================================================
-def log(msg: str) -> None:
-    print(msg, flush=True)
-
-def save_json(path: Path, data) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False, default=str)
-
-def load_json(path: Path, default=None):
-    if path.exists():
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return default
-
-def update_status(state: str, **extra) -> None:
-    payload = {
-        "state": state,
-        "updated_at": datetime.now().isoformat(),
-        **extra,
-    }
-    save_json(BACKTEST_STATUS_FILE, payload)
 
 # =========================================================
 # Generic helpers
 # =========================================================
+def save_json(path: Path, data) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+
+
 def normalize_ohlcv(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
     df = df.copy()
 
+    # If time is a column, promote it to index
     if "time" in df.columns:
         df["time"] = pd.to_datetime(df["time"], errors="coerce")
         df = df.set_index("time")
@@ -113,15 +87,18 @@ def normalize_ohlcv(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
             f"{source_name} missing required columns: {missing}. Available: {list(df.columns)}"
         )
 
+    # Keep only last year
     if len(df) > 0:
         cutoff = df.index.max() - pd.Timedelta(days=BACKTEST_LOOKBACK_DAYS)
         df = df.loc[df.index >= cutoff].copy()
 
+    # Ensure numeric
     for c in required:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df = df.dropna(subset=required)
 
     return df.sort_index()
+
 
 def find_best_available_parquet(tf: str) -> Path:
     preferred = BASE_DIR / f"btc_{tf}_{YEARS}y.parquet"
@@ -135,13 +112,15 @@ def find_best_available_parquet(tf: str) -> Path:
         )
 
     fallback = candidates[-1]
-    log(f"[BT] Requested {preferred.name} not found, using fallback {fallback.name}")
+    print(f"[BT] Requested {preferred.name} not found, using fallback {fallback.name}")
     return fallback
+
 
 # =========================================================
 # Data loading
 # =========================================================
 def load_btc_data(tf: str) -> pd.DataFrame:
+    # Special support for 5m built from 1m if 5m parquet is missing
     if tf == "5m":
         preferred_5m = BASE_DIR / f"btc_5m_{YEARS}y.parquet"
         if preferred_5m.exists():
@@ -149,7 +128,7 @@ def load_btc_data(tf: str) -> pd.DataFrame:
             return normalize_ohlcv(df, preferred_5m.name)
 
         one_min_file = find_best_available_parquet("1m")
-        log(f"[BT] 5m parquet missing, building 5m from {one_min_file.name}...")
+        print(f"[BT] 5m parquet missing, building 5m from {one_min_file.name}...")
         df_1m = pd.read_parquet(one_min_file)
         df_1m = normalize_ohlcv(df_1m, one_min_file.name)
 
@@ -167,13 +146,18 @@ def load_btc_data(tf: str) -> pd.DataFrame:
     df = pd.read_parquet(parquet_file)
     return normalize_ohlcv(df, parquet_file.name)
 
+
 def resample_to_base(df: pd.DataFrame, base_freq: str) -> pd.DataFrame:
     return df.resample(base_freq).ffill()
+
 
 # =========================================================
 # Multi-timeframe ML features
 # =========================================================
 def compute_features_tf(df: pd.DataFrame, tf_label: str) -> pd.DataFrame:
+    """
+    Feature construction compatible with the ML model.
+    """
     features = pd.DataFrame(index=df.index, dtype="float32")
 
     features["ret_1"] = df["close"].pct_change(1).astype("float32")
@@ -215,12 +199,13 @@ def compute_features_tf(df: pd.DataFrame, tf_label: str) -> pd.DataFrame:
     features = features[~features.index.duplicated(keep="last")]
     return features
 
+
 def build_multi_tf_features(base_freq: str = "1h") -> pd.DataFrame:
     all_feats = None
-    min_rows = 10
+    min_rows = 10   # Ignorar timeframes con muy pocas filas
 
     for tf in TIMEFRAMES:
-        log(f"[BT] Loading {tf} data...")
+        print(f"Loading {tf} data...")
         try:
             df = load_btc_data(tf)
             feats = compute_features_tf(df, tf)
@@ -228,15 +213,16 @@ def build_multi_tf_features(base_freq: str = "1h") -> pd.DataFrame:
             feats = feats[~feats.index.duplicated(keep="last")]
 
             if len(feats) < min_rows:
-                log(f"[WARN] {tf} has only {len(feats)} rows, skipping")
+                print(f"[WARN] {tf} has only {len(feats)} rows, skipping")
                 continue
 
             if all_feats is None:
                 all_feats = feats
             else:
+                # Outer join para no perder datos de otros timeframes
                 all_feats = all_feats.join(feats, how="outer")
         except Exception as e:
-            log(f"[WARN] Failed to process {tf}: {e}")
+            print(f"[WARN] Failed to process {tf}: {e}")
             continue
 
     if all_feats is None:
@@ -245,10 +231,16 @@ def build_multi_tf_features(base_freq: str = "1h") -> pd.DataFrame:
     all_feats = all_feats[~all_feats.index.duplicated(keep="last")]
     return all_feats
 
+
 def align_features_to_signal(full_features: pd.DataFrame, df_signal: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Alinea features multi-TF al timeframe de señal usando merge_asof.
+    Evita errores de dtype object vs datetime64 y problemas con nombres de índice.
+    """
     full_features = full_features.copy()
     df_signal = df_signal.copy()
 
+    # Forzar índices datetime y limpios
     full_features.index = pd.to_datetime(full_features.index, errors="coerce")
     df_signal.index = pd.to_datetime(df_signal.index, errors="coerce")
 
@@ -258,12 +250,14 @@ def align_features_to_signal(full_features: pd.DataFrame, df_signal: pd.DataFram
     full_features = full_features[~full_features.index.duplicated(keep="last")]
     df_signal = df_signal[~df_signal.index.duplicated(keep="last")]
 
+    # Forzar nombre único del índice antes de reset_index
     full_features.index.name = "time"
     df_signal.index.name = "time"
 
     left = df_signal.reset_index()
     right = full_features.reset_index()
 
+    # Blindaje extra: si por cualquier razón no quedó 'time', renombrar primera columna
     if "time" not in left.columns:
         left = left.rename(columns={left.columns[0]: "time"})
     if "time" not in right.columns:
@@ -292,12 +286,14 @@ def align_features_to_signal(full_features: pd.DataFrame, df_signal: pd.DataFram
 
     return full_features_aligned, df_signal_aligned
 
+
 # =========================================================
 # Heuristic features and signals
 # =========================================================
 def realized_vol(series, window=20):
     rets = np.log(series / series.shift(1))
     return rets.rolling(window).std() * np.sqrt(window)
+
 
 def slope(series, window=8):
     out = pd.Series(index=series.index, dtype=float)
@@ -306,6 +302,7 @@ def slope(series, window=8):
         x = np.arange(len(y))
         out.iloc[i - 1] = np.polyfit(x, y, 1)[0]
     return out
+
 
 def build_heuristic_features(df: pd.DataFrame) -> pd.DataFrame:
     f = df.copy()
@@ -331,6 +328,7 @@ def build_heuristic_features(df: pd.DataFrame) -> pd.DataFrame:
     f["breakout_up"] = f["close"] > f["high"].rolling(20).max().shift(1)
     f["breakout_dn"] = f["close"] < f["low"].rolling(20).min().shift(1)
     return f
+
 
 def heuristic_signal(row: pd.Series, cfg: dict) -> Tuple[float, float]:
     fp = cfg.get("feature_prob", {})
@@ -378,11 +376,13 @@ def heuristic_signal(row: pd.Series, cfg: dict) -> Tuple[float, float]:
     total = max(score_long + score_short, 1e-9)
     return score_long / total, score_short / total
 
+
 # =========================================================
-# Legacy indicators/signals
+# Legacy indicators/signals (precomputed version)
 # =========================================================
 def ema(s: pd.Series, n: int) -> pd.Series:
     return s.ewm(span=n, adjust=False).mean()
+
 
 def rsi(close: pd.Series, n: int) -> pd.Series:
     delta = close.diff()
@@ -393,7 +393,9 @@ def rsi(close: pd.Series, n: int) -> pd.Series:
     rs = avg_gain / avg_loss.replace(0, np.nan)
     return (100 - (100 / (1 + rs))).fillna(50.0)
 
+
 def precompute_legacy_indicators(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Precomputa ema_fast, ema_slow, rsi para todo el DataFrame."""
     lg = cfg.get("legacy", {})
     work = df.copy()
     work["ema_fast"] = ema(work["close"], int(lg.get("ema_fast_signal", 50)))
@@ -401,7 +403,9 @@ def precompute_legacy_indicators(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     work["rsi"] = rsi(work["close"], int(lg.get("rsi_len_signal", 14)))
     return work
 
+
 def legacy_signal_at_idx(df: pd.DataFrame, idx: int, cfg: dict) -> Optional[str]:
+    """Devuelve la señal para la fila idx usando valores precomputados."""
     row = df.iloc[idx]
     lg = cfg.get("legacy", {})
     if row["ema_fast"] > row["ema_slow"] and row["rsi"] >= float(lg.get("rsi_long", 58)):
@@ -410,12 +414,14 @@ def legacy_signal_at_idx(df: pd.DataFrame, idx: int, cfg: dict) -> Optional[str]
         return "sell"
     return None
 
+
 # =========================================================
 # ML model
 # =========================================================
 ML_MODEL = None
 SCALER = None
 FEATURE_COLUMNS = None
+
 
 def load_ml_model() -> bool:
     global ML_MODEL, SCALER, FEATURE_COLUMNS
@@ -430,11 +436,12 @@ def load_ml_model() -> bool:
         if not isinstance(FEATURE_COLUMNS, list):
             raise TypeError(f"feature_columns.json must contain a list, got {type(FEATURE_COLUMNS)}")
 
-        log("[BT] ML model loaded successfully")
+        print("[BT] ML model loaded successfully")
         return True
     except Exception as e:
-        log(f"[BT] Error loading ML model: {e}")
+        print(f"[BT] Error loading ML model: {e}")
         return False
+
 
 def ml_signal(features_row: pd.Series) -> Optional[int]:
     if ML_MODEL is None or SCALER is None or FEATURE_COLUMNS is None:
@@ -442,7 +449,8 @@ def ml_signal(features_row: pd.Series) -> Optional[int]:
     try:
         missing = [c for c in FEATURE_COLUMNS if c not in features_row.index]
         if missing:
-            log(f"[BT] Missing ML features: {missing[:10]}{'...' if len(missing) > 10 else ''}")
+            # Solo mostrar una vez para evitar spam
+            print(f"[BT] Missing ML features: {missing[:10]}{'...' if len(missing) > 10 else ''}")
             return None
 
         X = features_row[FEATURE_COLUMNS].values.reshape(1, -1)
@@ -451,8 +459,9 @@ def ml_signal(features_row: pd.Series) -> Optional[int]:
         mapping = {0: -1, 1: 0, 2: 1}
         return mapping[pred_class]
     except Exception as e:
-        log(f"[BT] ML prediction error: {e}")
+        print(f"[BT] ML prediction error: {e}")
         return None
+
 
 # =========================================================
 # Risk management
@@ -469,6 +478,7 @@ def atr(df: pd.DataFrame, length: int = 14) -> pd.Series:
     ], axis=1).max(axis=1)
     return tr.rolling(length).mean()
 
+
 def compute_sl_tp(entry_price: float, atr_val: float, side: str, cfg: dict) -> Tuple[float, float]:
     risk = cfg.get("risk_engine", {})
     sl_mult = float(risk.get("sl_vol_mult", 1.2))
@@ -481,53 +491,62 @@ def compute_sl_tp(entry_price: float, atr_val: float, side: str, cfg: dict) -> T
         tp = entry_price - atr_val * tp_mult
     return sl, tp
 
-# =========================================================
-# Main backtest
-# =========================================================
-def run_backtest(cfg: dict, progress_callback: Callable = None) -> Tuple[pd.DataFrame, dict]:
-    mode = cfg.get("mode", "feature_prob")
-    log(f"[BT] Starting backtest in mode: {mode}")
-    log(f"[BT] Lookback: last {BACKTEST_LOOKBACK_DAYS} days")
 
+# =========================================================
+# Main backtest (optimized)
+# =========================================================
+def run_backtest(cfg: dict, progress_callback: Callable = None, **kwargs) -> Tuple[pd.DataFrame, dict]:
+    mode = cfg.get("mode", "feature_prob")
+    print(f"[BT] Starting backtest in mode: {mode}")
+    print(f"[BT] Lookback: last {BACKTEST_LOOKBACK_DAYS} days")
+
+    # Load signal data (always needed)
     tf_signal = cfg.get("tf_signal", "15m")
     df_signal = load_btc_data(tf_signal).sort_index()
 
     if df_signal.empty:
-        log("[BT] df_signal is empty after loading.")
+        print("[BT] df_signal is empty after loading.")
         return pd.DataFrame(), {}
 
+    # Load ML features if needed
     full_features = pd.DataFrame()
     if mode in ("ml_model", "hybrid"):
-        log("[BT] Building multi-timeframe features (this may take a while)...")
-        full_features = build_multi_tf_features(base_freq="1h")
+        print("[BT] Building multi-timeframe features (this may take a while)...")
+        try:
+            full_features = build_multi_tf_features(base_freq="1h")
+        except Exception as e:
+            print(f"[BT] Error building multi-TF features: {e}")
+            return None, {}
 
         if full_features.empty:
-            log("[BT] full_features is empty after building, cannot proceed.")
+            print("[BT] full_features is empty after building, cannot proceed.")
             return pd.DataFrame(), {}
 
-        log(f"[BT] full_features shape: {full_features.shape}")
-        log(f"[BT] df_signal shape: {df_signal.shape}")
+        print(f"[BT] full_features shape: {full_features.shape}, index range: {full_features.index.min()} to {full_features.index.max()}")
+        print(f"[BT] df_signal shape: {df_signal.shape}, index range: {df_signal.index.min()} to {df_signal.index.max()}")
 
         full_features, df_signal = align_features_to_signal(full_features, df_signal)
-        log(f"[BT] Aligned rows: features={len(full_features)} signal={len(df_signal)}")
+        print(f"[BT] Aligned rows: features={len(full_features)} signal={len(df_signal)}")
 
         if full_features.empty or df_signal.empty:
-            log("[BT] No overlapping rows after alignment")
+            print("[BT] No overlapping rows after alignment")
             return pd.DataFrame(), {}
 
+    # Precompute heuristic features and ATR if needed
     df_heuristic_full = None
     atr_full = None
     if mode in ("feature_prob", "hybrid"):
-        log("[BT] Precomputing heuristic features...")
+        print("[BT] Precomputing heuristic features...")
         df_heuristic_full = build_heuristic_features(df_signal)
+        # Keep only the same index as df_signal (should be the same)
         df_heuristic_full = df_heuristic_full.loc[df_signal.index]
-
-        log("[BT] Precomputing ATR...")
+        print("[BT] Precomputing ATR...")
         atr_full = atr(df_signal, 14)
 
+    # Precompute legacy indicators if needed
     df_legacy_full = None
     if mode == "legacy_classic":
-        log("[BT] Precomputing legacy indicators...")
+        print("[BT] Precomputing legacy indicators...")
         df_legacy_full = precompute_legacy_indicators(df_signal, cfg)
         df_legacy_full = df_legacy_full.loc[df_signal.index]
 
@@ -550,17 +569,16 @@ def run_backtest(cfg: dict, progress_callback: Callable = None) -> Tuple[pd.Data
     cooldown_minutes = int(risk.get("cooldown_minutes", 180))
 
     cooldown_end = None
-    n_rows = len(df_signal)
 
+    n_rows = len(df_signal)
     for idx in range(n_rows):
+        # Progress reporting
         if progress_callback:
             progress_callback(idx, n_rows)
-        elif idx % 5000 == 0 and idx > 0:
-            pct = round(idx / max(n_rows, 1) * 100, 2)
-            update_status("running", progress_pct=pct, current_step=f"rows {idx}/{n_rows}")
-            log(f"[BT] Processing row {idx}/{n_rows} ({pct}%)")
+        elif idx % 5000 == 0:
+            print(f"[BT] Processing row {idx}/{n_rows}")
 
-        if idx < 100:
+        if idx < 100:   # saltar inicio para estabilizar indicadores
             continue
 
         row = df_signal.iloc[idx]
@@ -721,7 +739,11 @@ def run_backtest(cfg: dict, progress_callback: Callable = None) -> Tuple[pd.Data
         else:
             continue
 
-        atr_val = atr_full.iloc[idx] if atr_full is not None else atr(df_signal.iloc[:idx + 1], 14).iloc[-1]
+        # Obtener ATR precomputado o calcular en el momento
+        if atr_full is not None:
+            atr_val = atr_full.iloc[idx]
+        else:
+            atr_val = atr(df_signal.iloc[:idx + 1], 14).iloc[-1]
 
         if pd.isna(atr_val) or atr_val <= 0:
             continue
@@ -744,6 +766,8 @@ def run_backtest(cfg: dict, progress_callback: Callable = None) -> Tuple[pd.Data
 
     trades_df["entry_time"] = pd.to_datetime(trades_df["entry_time"], errors="coerce")
     trades_df["exit_time"] = pd.to_datetime(trades_df["exit_time"], errors="coerce")
+
+    # Compatibility with GUI and Apolo
     trades_df["pnl_equity_pct"] = trades_df["pnl_pct"]
 
     total_trades = len(trades_df)
@@ -785,8 +809,9 @@ def run_backtest(cfg: dict, progress_callback: Callable = None) -> Tuple[pd.Data
 
     return trades_df, stats
 
+
 # =========================================================
-# Save outputs
+# Save outputs for GUI
 # =========================================================
 def save_backtest_outputs(trades: Optional[pd.DataFrame], stats: dict) -> None:
     if trades is not None and not trades.empty:
@@ -796,177 +821,112 @@ def save_backtest_outputs(trades: Optional[pd.DataFrame], stats: dict) -> None:
 
     save_json(BACKTEST_STATS_FILE, stats or {})
 
-# =========================================================
-# Config loading
-# =========================================================
-def default_config() -> dict:
-    return {
-        "symbol": "BTC/USDT:USDT",
-        "market_symbol": "BTCUSDT",
-        "poll_seconds": 10,
-        "status_heartbeat_seconds": 60,
-        "tf_signal": "15m",
-        "tf_confirm": "5m",
-        "tf_entry": "5m",
-        "tf_trend": "1h",
-        "live_chart_tf": "15m",
-        "mode": "feature_prob",
-        "use_1h_trend_filter": True,
-        "feature_prob": {
-            "ret_1_weight": 0.1,
-            "ret_3_weight": 0.12,
-            "ret_12_weight": 0.14,
-            "range_pos_weight": 0.1,
-            "vol_ratio_weight": 0.08,
-            "realized_vol_weight": 0.08,
-            "slope_weight": 0.12,
-            "trend_weight": 0.16,
-            "breakout_weight": 0.1,
-            "long_threshold": 0.58,
-            "short_threshold": 0.58,
-            "persistence_bars": 2
-        },
-        "hybrid": {
-            "ml_weight": 0.6,
-            "long_threshold": 0.58,
-            "short_threshold": 0.58
-        },
-        "risk_engine": {
-            "sl_vol_mult": 1.2,
-            "tp_vol_mult": 2.8,
-            "breakeven_R": 1.0,
-            "trail_start_R": 1.5,
-            "trail_vol_mult": 1.0,
-            "risk_per_trade_pct": 0.5,
-            "max_hold_minutes": 360,
-            "cooldown_minutes": 180
-        },
-        "execution": {
-            "fees_enabled": True,
-            "fee_rate_roundtrip": 0.001,
-            "slippage_roundtrip_pct": 0.0001,
-            "label_exits": True
-        },
-        "legacy": {
-            "ema_fast_trend": 50,
-            "ema_slow_trend": 200,
-            "ema_fast_signal": 50,
-            "ema_slow_signal": 200,
-            "donchian_window_signal": 96,
-            "rsi_len_signal": 14,
-            "rsi_long": 58,
-            "rsi_short": 42,
-            "atr_len_signal": 14,
-            "atr_ma_window_signal": 96,
-            "atr_min_mult": 1.25,
-            "breakout_buffer_atr": 0.55,
-            "sl_atr_mult": 1.1,
-            "tp_atr_mult": 3.2,
-            "breakeven_R": 1.0,
-            "trail_start_R": 1.5,
-            "trail_atr_mult": 1.0
-        },
-        "signal_engine": "feature_prob",
-        "ema_fast_trend": 50,
-        "ema_slow_trend": 200,
-        "ema_fast_signal": 50,
-        "ema_slow_signal": 200,
-        "donchian_window_signal": 96,
-        "rsi_len_signal": 14,
-        "rsi_long": 58,
-        "rsi_short": 42,
-        "atr_len_signal": 14,
-        "atr_ma_window_signal": 96,
-        "atr_min_mult": 1.25,
-        "breakout_buffer_atr": 0.55,
-        "sl_atr_mult": 1.1,
-        "tp_atr_mult": 3.2,
-        "trail_atr_mult": 1.0,
-        "breakeven_R": 1.0,
-        "trail_start_R": 1.5,
-        "max_hold_minutes": 360,
-        "cooldown_minutes": 180,
-        "risk_per_trade_pct": 0.5,
-        "fees_enabled": True,
-        "fee_rate_roundtrip": 0.001,
-        "slippage_roundtrip_pct": 0.0001,
-        "label_exits": True
-    }
 
-def load_runtime_config(path: Path) -> dict:
+# =========================================================
+# Standalone entrypoint
+# =========================================================
+if __name__ == "__main__":
+    # Cargar configuración desde archivo o crear por defecto
     cfg = None
-    if path.exists():
+    if PARAMS_FILE.exists():
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(PARAMS_FILE, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-            log(f"[BT] Config loaded from {path}")
+            print("[BT] Config loaded from", PARAMS_FILE)
         except json.JSONDecodeError as e:
-            log(f"[BT] Error: {path} is not valid JSON: {e}")
-            backup = path.with_suffix(".json.bak")
-            path.rename(backup)
-            log(f"[BT] Corrupted file backed up to {backup}")
+            print(f"[BT] Error: {PARAMS_FILE} is not valid JSON: {e}")
+            print("[BT] Renaming corrupted file and creating default config...")
+            # Respaldo del archivo corrupto
+            backup = PARAMS_FILE.with_suffix(".json.bak")
+            PARAMS_FILE.rename(backup)
+            print(f"[BT] Corrupted file backed up to {backup}")
             cfg = None
     else:
-        log(f"[BT] Config file not found: {path}. Using default.")
+        print("[BT] Config file not found, using default.")
 
     if cfg is None:
-        cfg = default_config()
-        with open(path, "w", encoding="utf-8") as f:
+        # Configuración por defecto (la que proporcionaste)
+        cfg = {
+            "symbol": "BTC/USDT:USDT",
+            "market_symbol": "BTCUSDT",
+            "poll_seconds": 10,
+            "status_heartbeat_seconds": 60,
+            "tf_signal": "5m",
+            "tf_confirm": "3m",
+            "tf_entry": "1m",
+            "tf_trend": "1h",
+            "live_chart_tf": "5m",
+            "mode": "hybrid",
+            "use_1h_trend_filter": True,
+            "feature_prob": {
+                "ret_1_weight": 0.03141615189885727,
+                "ret_3_weight": 0.18866015004301281,
+                "ret_12_weight": 0.3003548965021518,
+                "range_pos_weight": 0.055325684938848874,
+                "vol_ratio_weight": 0.10299065188227281,
+                "realized_vol_weight": 0.11834937021251411,
+                "slope_weight": 0.10247384571054015,
+                "trend_weight": 0.24522627006305897,
+                "breakout_weight": 0.1580495714431668,
+                "long_threshold": 0.5679382121445798,
+                "short_threshold": 0.5348897816190203,
+                "persistence_bars": 2
+            },
+            "hybrid": {
+                "ml_weight": 0.6,
+                "long_threshold": 0.5679382121445798,
+                "short_threshold": 0.5348897816190203
+            },
+            "risk_engine": {
+                "sl_vol_mult": 1.8849241204267702,
+                "tp_vol_mult": 5.405936553596987,
+                "breakeven_R": 1.605070106941517,
+                "trail_start_R": 1.3465267712254836,
+                "trail_vol_mult": 2.0697531461338303,
+                "risk_per_trade_pct": 0.5238500076546306,
+                "max_hold_minutes": 331,
+                "cooldown_minutes": 61
+            },
+            "execution": {
+                "fees_enabled": True,
+                "fee_rate_roundtrip": 0.001,
+                "slippage_roundtrip_pct": 0.0001,
+                "label_exits": True
+            },
+            "legacy": {
+                "ema_fast_trend": 50,
+                "ema_slow_trend": 200,
+                "ema_fast_signal": 50,
+                "ema_slow_signal": 200,
+                "donchian_window_signal": 96,
+                "rsi_len_signal": 14,
+                "rsi_long": 58,
+                "rsi_short": 42,
+                "atr_len_signal": 14,
+                "atr_ma_window_signal": 96,
+                "atr_min_mult": 1.25,
+                "breakout_buffer_atr": 0.55,
+                "sl_atr_mult": 1.1,
+                "tp_atr_mult": 3.2,
+                "breakeven_R": 1.0,
+                "trail_start_R": 1.5,
+                "trail_atr_mult": 1.0
+            },
+            "days": 60,
+            "signal_engine": "hybrid",
+            "leverage": 5,
+            "max_loss_streak": 5
+        }
+        # Opcional: guardar la configuración por defecto para futuras ejecuciones
+        with open(PARAMS_FILE, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
-        log(f"[BT] Default config saved to {path}")
+        print(f"[BT] Default config saved to {PARAMS_FILE}")
 
-    return cfg
+    # Cargar modelo ML (si existe)
+    load_ml_model()
 
-# =========================================================
-# Entrypoint
-# =========================================================
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default=str(PARAMS_FILE))
-    args = parser.parse_args()
+    trades, stats = run_backtest(cfg)
+    save_backtest_outputs(trades, stats)
 
-    cfg_path = Path(args.config)
-
-    try:
-        update_status("starting", pid=os.getpid(), config=str(cfg_path))
-
-        cfg = load_runtime_config(cfg_path)
-
-        mode = cfg.get("mode", "feature_prob")
-        if mode in ("ml_model", "hybrid"):
-            load_ml_model()
-
-        start_t = time.time()
-        update_status("running", pid=os.getpid(), mode=mode, progress_pct=0)
-
-        trades, stats = run_backtest(cfg)
-
-        save_backtest_outputs(trades, stats)
-
-        elapsed = round(time.time() - start_t, 2)
-        update_status(
-            "finished",
-            pid=os.getpid(),
-            mode=mode,
-            progress_pct=100,
-            elapsed_seconds=elapsed,
-            trades=0 if trades is None else len(trades),
-            stats=stats or {},
-        )
-
-        log(f"[BT] Finished in {elapsed}s")
-        log(f"[BT] Trades: {0 if trades is None else len(trades)}")
-        log(f"[BT] Stats: {stats}")
-
-        return 0
-
-    except Exception as e:
-        err = f"{type(e).__name__}: {e}"
-        tb = traceback.format_exc()
-        update_status("error", pid=os.getpid(), error=err, traceback=tb)
-        log(f"[BT][FATAL] {err}")
-        log(tb)
-        return 1
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    print(f"[BT] Trades: {0 if trades is None else len(trades)}")
+    print(f"[BT] Stats: {stats}")
